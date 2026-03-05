@@ -1,0 +1,1 @@
+# play othello to test if it works

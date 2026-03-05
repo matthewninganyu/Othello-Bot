@@ -1,0 +1,1 @@
+# training script for outsourced training on distributed GPUs via Modal
