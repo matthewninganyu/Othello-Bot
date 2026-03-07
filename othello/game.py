@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, move_gen, apply_move, get_moves
+from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, get_moves
 import numpy as np
 from numba import njit, uint64
 
@@ -10,7 +10,7 @@ class Game:
         self.white_bb = INIT_WHITE
         self.current_player = BLACK # Black goes first
 
-        #Stores the board state, the current player, and the move that led to this state (for undoing moves)
+        # Stores the board state, the current player, and the move that led to this state (for undoing moves)
         self.board_history = [(self.black_bb, self.white_bb, self.current_player, None)]
     
     @property
@@ -22,14 +22,14 @@ class Game:
         if not self.game_over:
             return None
         
-        black = self.popcount(self.black_bb)
-        white = self.popcount(self.white_bb)
+        black = popcount(self.black_bb)
+        white = popcount(self.white_bb)
         if black > white:
             return BLACK
         elif white > black:
             return WHITE
         else:
-            return 0 #tie
+            return 0 # Tie
         
     @property
     def legal_moves(self):
@@ -75,6 +75,4 @@ class Game:
                 else:
                     print(".", end=" ")
             print()
-
-
 
