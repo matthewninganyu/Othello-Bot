@@ -10,12 +10,10 @@
 | **Numba** | `pip install numba` | JIT-compile hot game logic loops for speed |
 | **Weights & Biases** | `pip install wandb` | Track and visualize training runs |
 | **pytest** | `pip install pytest` | Unit test game logic (move gen, flip rules, etc.) |
-| **black** | `pip install black` | Auto-format code |
-| **isort** | `pip install isort` | Sort and organize imports |
 
 ### To install run
 ```bash
-pip install torch torchvision torchaudio numpy modal numba wandb cloudpickle pytest black isort
+pip install torch torchvision numpy modal numba wandb pytest
 ```
 ### or (after cloning):
 ```bash
