@@ -80,9 +80,9 @@ class Game:
             for col in range(8):
                 bit = row * 8 + col
                 if (self.black_bb >> bit) & 1:
-                    print("B", end=" ")
+                    print("○", end=" ")
                 elif (self.white_bb >> bit) & 1:
-                    print("W", end=" ")
+                    print("●", end=" ")
                 else:
                     print(".", end=" ")
             print()

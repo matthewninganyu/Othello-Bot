@@ -34,6 +34,20 @@ COL_LETTERS = "abcdefgh"
 
 ############################## HELPER FUNCTIONS #############################
 
+def print_bb(bb, label=""):
+    if label:
+        print(label)
+    for row in range(8):
+        row_str = ""
+        for col in range(8):
+            idx = row * 8 + col
+            if (bb >> np.uint64(idx)) & np.uint64(1):
+                row_str += "1 "
+            else:
+                row_str += ". "
+        print(row_str)
+    print()
+
 @njit("Tuple((int64,uint64))(uint64)", cache=True)
 def lsb(bb):
     lsb = bb & -bb
@@ -70,39 +84,45 @@ def move_gen(me, opp): # parameters are 64bit bitboards
     moves |= empty & (candidates << 8)
 
     # East
-    candidates = opp & (me << 1) & EAST_BOUND
+    candidates = opp & ((me & EAST_BOUND) << np.uint64(1))
     for _ in range(6):
-        candidates |= opp & (candidates << 1) & EAST_BOUND
-    moves |= empty & (candidates << 1) & EAST_BOUND
+        candidates |= opp & ((candidates & EAST_BOUND) << np.uint64(1))
+    moves |= empty & ((candidates & EAST_BOUND) << np.uint64(1))
 
     # West
-    candidates = opp & (me >> 1) & WEST_BOUND
+    candidates = opp & ((me & WEST_BOUND) >> np.uint64(1))
     for _ in range(6):
-        candidates |= opp & (candidates >> 1) & WEST_BOUND
-    moves |= empty & (candidates >> 1) & WEST_BOUND
+        candidates |= opp & ((candidates & WEST_BOUND) >> np.uint64(1))
+    moves |= empty & ((candidates & WEST_BOUND) >> np.uint64(1))
 
     # NE
-    candidates = opp & (me >> 7) & EAST_BOUND
+    candidates = opp & ((me & EAST_BOUND) >> np.uint64(7))
     for _ in range(6):
-        candidates |= opp & (candidates >> 7) & EAST_BOUND
-    moves |= empty & (candidates >> 7) & EAST_BOUND
+        candidates |= opp & ((candidates & EAST_BOUND) >> np.uint64(7))
+    moves |= empty & ((candidates & EAST_BOUND) >> np.uint64(7))
 
     # SE
-    candidates = opp & (me << 9) & EAST_BOUND
+    candidates = opp & ((me & EAST_BOUND) << np.uint64(9))
     for _ in range(6):
-        candidates |= opp & (candidates << 9) & EAST_BOUND
-    moves |= empty & (candidates << 9) & EAST_BOUND
+        candidates |= opp & ((candidates & EAST_BOUND) << np.uint64(9))
+    moves |= empty & ((candidates & EAST_BOUND) << np.uint64(9))
 
     # SW
-    candidates = opp & (me << 7) & WEST_BOUND
+    candidates = opp & ((me & WEST_BOUND) << np.uint64(7))
     for _ in range(6):
-        candidates |= opp & (candidates << 7) & WEST_BOUND
-    moves |= empty & (candidates << 7) & WEST_BOUND
+        candidates |= opp & ((candidates & WEST_BOUND) << np.uint64(7))
+    moves |= empty & ((candidates & WEST_BOUND) << np.uint64(7))
+
+    # NW
+    candidates = opp & ((me & WEST_BOUND) >> np.uint64(9))
+    for _ in range(6):
+        candidates |= opp & ((candidates & WEST_BOUND) >> np.uint64(9))
+    moves |= empty & ((candidates & WEST_BOUND) >> np.uint64(9))
 
     # NW
     candidates = opp & (me >> 9) & WEST_BOUND
     for _ in range(6):
-        candidates |= opp & (candidates >> 9) & WEST_BOUND
+        candidates |= opp & ((candidates & WEST_BOUND) >> 9)  # masks source (correct)
     moves |= empty & (candidates >> 9) & WEST_BOUND
 
     return moves
@@ -223,3 +243,4 @@ def notation_to_idx(notation: str) -> int:
     if not (0 <= row <= 7):
         raise ValueError(f"Invalid notation: '{notation}'")
     return row * 8 + col
+
