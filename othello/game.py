@@ -85,13 +85,4 @@ class Game:
             print()
 
 
-new_game = Game()
-new_game.print_board()
 
-print("Legal moves for Black:", new_game.legal_moves)
-new_game.make_move(19) # D3
-new_game.print_board()
-
-print("Legal moves for White:", new_game.legal_moves)
-new_game.make_move(18) # C4
-new_game.print_board()
