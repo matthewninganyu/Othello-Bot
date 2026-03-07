@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, get_moves
+from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves
 import numpy as np
 from numba import njit, uint64
 
@@ -15,7 +15,7 @@ class Game:
     
     @property
     def game_over(self):
-        return len(get_moves(self.black_bb, self.white_bb)) == 0 and len(get_moves(self.white_bb, self.black_bb)) == 0
+        return (move_gen(self.black_bb, self.white_bb) == uint64(0) and move_gen(self.white_bb, self.black_bb) == uint64(0))
     
     @property
     def winner(self):
@@ -24,6 +24,7 @@ class Game:
         
         black = popcount(self.black_bb)
         white = popcount(self.white_bb)
+
         if black > white:
             return BLACK
         elif white > black:
@@ -39,13 +40,17 @@ class Game:
             return get_moves(self.white_bb, self.black_bb)
         
     def make_move(self, move: int):
+        # Check game over
+        if self.game_over:
+            print(f"Game ended! Winner: {self.winner}")
+            return
+        
         # Validate the move
         if move not in self.legal_moves:
             raise ValueError(f"Illegal move: {move}")
     
-        #Get the new board state after applying the move
+        # Get the new board state after applying the move
         if self.current_player == BLACK:
-            #The current player is always first in the apply_move parameters
             new_black, new_white = apply_move(self.black_bb, self.white_bb, move)
         else:
             new_white, new_black = apply_move(self.white_bb, self.black_bb, move)
@@ -58,9 +63,15 @@ class Game:
         self.white_bb = new_white
 
         if self.current_player == BLACK:
-            self.current_player = WHITE
+            if move_gen(self.white_bb, self.black_bb) == uint64(0):
+                pass
+            else:
+                self.current_player = WHITE
         else:
-            self.current_player = BLACK
+            if move_gen(self.black_bb, self.white_bb) == uint64(0):
+                pass
+            else:
+                self.current_player = BLACK
 
     def print_board(self):
         print("  A B C D E F G H")

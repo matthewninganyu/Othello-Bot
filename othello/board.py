@@ -208,13 +208,13 @@ def get_moves(me, opp):
         moves.append(idx)
     return moves
 
+# Index to algebraic notation e.g. 19 -> 'd3'
 def idx_to_notation(idx: int) -> str:
-    # Index to algebraic notation e.g. 19 -> 'd3'
     row, col = divmod(idx, 8)
     return f"{COL_LETTERS[col]}{row + 1}"
 
+# Algebraic notation to index
 def notation_to_idx(notation: str) -> int:
-    # Algebraic notation to index
     n = notation.strip().lower()
     if len(n) != 2 or n[0] not in COL_LETTERS or not n[1].isdigit():
         raise ValueError(f"Invalid notation: '{notation}'")
