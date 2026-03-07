@@ -11,7 +11,6 @@ All hot functions are JIT-compiled with Numba
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
 import numpy as np
 from numba import njit, uint64
 
@@ -31,21 +30,30 @@ INIT_WHITE = uint64(1 << 27 | 1 << 36)
 WEST_BOUND = uint64(0xFEFEFEFEFEFEFEFE) # 1111 1110
 EAST_BOUND = uint64(0x7F7F7F7F7F7F7F7F) # 0111 1111
 
+COL_LETTERS = "abcdefgh"
+
 ############################## HELPER FUNCTIONS #############################
 
-@njit(cache=True)
-def lsb(bb: uint64):
+@njit("Tuple((int64,uint64))(uint64)", cache=True)
+def lsb(bb):
     lsb = bb & -bb
     idx = 0
     while (lsb >> idx) > 1:
         idx += 1
     return idx, bb ^ lsb
 
+@njit("int64(uint64)", cache=True)
+def popcount(bb):
+    bb = bb - ((bb >> uint64(1)) & uint64(0x5555555555555555))
+    bb = (bb & uint64(0x3333333333333333)) + ((bb >> uint64(2)) & uint64(0x3333333333333333))
+    bb = (bb + (bb >> uint64(4))) & uint64(0x0F0F0F0F0F0F0F0F)
+    return int((bb * uint64(0x0101010101010101)) >> uint64(56))
+
 ################################### GAME ####################################
 
 # generate legal moves, returns bitboard
-@njit(cache=True)
-def move_gen(me: uint64, opp: uint64): # parameters are 64bit bitboards
+@njit("uint64(uint64,uint64)", cache=True)
+def move_gen(me, opp): # parameters are 64bit bitboards
     empty = uint64(~(me | opp))
     moves = uint64(0)
 
@@ -100,8 +108,8 @@ def move_gen(me: uint64, opp: uint64): # parameters are 64bit bitboards
     return moves
 
 # Update bitboards after a move
-@njit(cache=True)
-def apply_move(me: uint64, opp: uint64, move_idx: int):
+@njit("Tuple((uint64,uint64))(uint64,uint64,int64)", cache=True)
+def apply_move(me, opp, move_idx):
     move = uint64(1) << move_idx
     flipped = uint64(0)
 
@@ -187,10 +195,12 @@ def apply_move(me: uint64, opp: uint64, move_idx: int):
     opp ^= flipped
     return me, opp
 
+
+
 ################################ EASE OF USE ################################
 
 @njit(cache=True)
-def get_moves(me: uint64, opp: uint64):
+def get_moves(me, opp):
     moves_bb = move_gen(me, opp)
     moves = []
     while moves_bb:
@@ -198,5 +208,18 @@ def get_moves(me: uint64, opp: uint64):
         moves.append(idx)
     return moves
 
-# TODO: translate algebraic notation of squares to bitboard index (A4 -> 3)
-# A0 is top-left from black perspective
+def idx_to_notation(idx: int) -> str:
+    # Index to algebraic notation e.g. 19 -> 'd3'
+    row, col = divmod(idx, 8)
+    return f"{COL_LETTERS[col]}{row + 1}"
+
+def notation_to_idx(notation: str) -> int:
+    # Algebraic notation to index
+    n = notation.strip().lower()
+    if len(n) != 2 or n[0] not in COL_LETTERS or not n[1].isdigit():
+        raise ValueError(f"Invalid notation: '{notation}'")
+    col = COL_LETTERS.index(n[0])
+    row = int(n[1]) - 1
+    if not (0 <= row <= 7):
+        raise ValueError(f"Invalid notation: '{notation}'")
+    return row * 8 + col

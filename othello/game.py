@@ -1,16 +1,8 @@
 from __future__ import annotations
-from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, move_gen, apply_move, get_moves
-from dataclasses import dataclass
+from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, move_gen, apply_move, get_moves
 import numpy as np
 from numba import njit, uint64
 
-
-@njit(cache=True)
-def popcount(bb: uint64) -> int:
-    bb = bb - ((bb >> uint64(1)) & uint64(0x5555555555555555))
-    bb = (bb & uint64(0x3333333333333333)) + ((bb >> uint64(2)) & uint64(0x3333333333333333))
-    bb = (bb + (bb >> uint64(4))) & uint64(0x0F0F0F0F0F0F0F0F)
-    return int((bb * uint64(0x0101010101010101)) >> uint64(56))
 
 class Game:
     def __init__(self):
