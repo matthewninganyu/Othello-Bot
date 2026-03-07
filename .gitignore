@@ -1,3 +1,4 @@
 .*
 !.gitignore
 /data/
+/othello/__pycache__/
