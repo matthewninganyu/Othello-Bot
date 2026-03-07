@@ -47,6 +47,10 @@ class Game:
             return get_moves(self.white_bb, self.black_bb)
         
     def make_move(self, move: int):
+        # Validate the move
+        if move not in self.legal_moves:
+            raise ValueError(f"Illegal move: {move}")
+    
         #Get the new board state after applying the move
         if self.current_player == BLACK:
             #The current player is always first in the apply_move parameters
@@ -82,4 +86,12 @@ class Game:
 
 
 new_game = Game()
+new_game.print_board()
+
+print("Legal moves for Black:", new_game.legal_moves)
+new_game.make_move(19) # D3
+new_game.print_board()
+
+print("Legal moves for White:", new_game.legal_moves)
+new_game.make_move(18) # C4
 new_game.print_board()
