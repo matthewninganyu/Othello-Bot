@@ -1,1 +1,1 @@
-# play othello to test if it works
+# TODO: Implement interface to play the game

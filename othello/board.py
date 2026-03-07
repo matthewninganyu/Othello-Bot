@@ -43,6 +43,7 @@ def lsb(bb: uint64):
 
 ################################### GAME ####################################
 
+# generate legal moves, returns bitboard
 @njit(cache=True)
 def move_gen(me: uint64, opp: uint64): # parameters are 64bit bitboards
     empty = uint64(~(me | opp))
@@ -98,6 +99,7 @@ def move_gen(me: uint64, opp: uint64): # parameters are 64bit bitboards
 
     return moves
 
+# Update bitboards after a move
 @njit(cache=True)
 def apply_move(me: uint64, opp: uint64, move_idx: int):
     move = uint64(1) << move_idx
