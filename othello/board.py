@@ -1,5 +1,5 @@
 """
-game.py - Othello engine
+board.py - Othello engine
 ----------------------------------------------
 Board Rep: two u64int bitboards (black_bb, white_bb)
 Notes:
@@ -16,10 +16,9 @@ from numba import njit, uint64
 
 ################################# CONSTANTS #################################
 
-# Turn
-BLACK = 1
-WHITE = 2
-EMPTY = 0
+# turn
+BLACK = 0
+WHITE = 1
 
 # Starting board
 INIT_BLACK = uint64(1 << 28 | 1 << 35)
@@ -118,12 +117,6 @@ def move_gen(me, opp): # parameters are 64bit bitboards
     for _ in range(6):
         candidates |= opp & ((candidates & WEST_BOUND) >> np.uint64(9))
     moves |= empty & ((candidates & WEST_BOUND) >> np.uint64(9))
-
-    # NW
-    candidates = opp & (me >> 9) & WEST_BOUND
-    for _ in range(6):
-        candidates |= opp & ((candidates & WEST_BOUND) >> 9)  # masks source (correct)
-    moves |= empty & (candidates >> 9) & WEST_BOUND
 
     return moves
 
