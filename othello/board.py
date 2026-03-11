@@ -17,9 +17,8 @@ from numba import njit, uint64
 ################################# CONSTANTS #################################
 
 # Turn
-BLACK = 1
-WHITE = 2
-EMPTY = 0
+BLACK = 0
+WHITE = 1
 
 # Starting board
 INIT_BLACK = uint64(1 << 28 | 1 << 35)

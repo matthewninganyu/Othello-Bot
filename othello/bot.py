@@ -76,19 +76,14 @@ class Node:
         idx = random.randrange(len(self.expandable_moves))
         move = self.expandable_moves.pop(idx)
 
-        #Apply the move to get new board state
-        if self.game.current_player == BLACK:
-            new_black, new_white = apply_move(self.game.black_bb, self.game.white_bb, move)
-            next_player_turn = WHITE
-        else:
-            new_white, new_black = apply_move(self.game.white_bb, self.game.black_bb, move)
-            next_player_turn = BLACK
-
         #Create new node object (child)
         new_game = Game()
-        new_game.black_bb = new_black
-        new_game.white_bb = new_white
-        new_game.current_player = next_player_turn
+        new_game.black_bb = self.game.black_bb
+        new_game.white_bb = self.game.white_bb
+        new_game.current_player = self.game.current_player
+
+        #make the move
+        new_game.make_move(move)
 
         #def __init__(self, game, args, parent=None, action_taken=None, prior=0):
         child = Node(new_game, self.args, self, move, 0) #NO PRIOR PROBABILITIES FROM NETWORK YET
@@ -99,7 +94,7 @@ class Node:
     
 
     def simulate(self):
-        pass
+        return 0
 
     def simulate_rollout(self):
         player = self.game.current_player
@@ -113,12 +108,12 @@ class Node:
         #Simulate random moves until the game ends
         while not new_game.game_over:
             random_move = random.choice(new_game.legal_moves)
-            new_game.apply_move(random_move)
+            new_game.make_move(random_move)
 
         #Return value according to whos turn it was at the beginning of the rollout simulation
         if player == new_game.winner:
             return 1
-        elif self.winner == 0:
+        elif new_game.winner == 0:
             return 0
         else:
             return -1
@@ -191,12 +186,9 @@ class MCTS:
             node.backpropagate(value)
 
         #Now after doing args.['num_searches'], we return the best move
-        best_child = root.most_visited_child
+        best_child = root.most_visited_child()
         return best_child.action_taken if best_child else None
         
-
-
-
 
             
                 
