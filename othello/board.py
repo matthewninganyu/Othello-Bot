@@ -16,7 +16,7 @@ from numba import njit, uint64
 
 ################################# CONSTANTS #################################
 
-# turn
+# Turn
 BLACK = 0
 WHITE = 1
 
