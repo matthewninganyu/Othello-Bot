@@ -1,6 +1,7 @@
 from .board import BLACK, WHITE, apply_move, move_gen, get_moves, popcount, get_value_and_terminated
 import math
 import random
+import numpy as np
 
 # MCTS Bot for Othello
 # ----------------------------------------
@@ -18,7 +19,12 @@ import random
 
 class Node:
     def __init__(self, game_state, args, parent=None, action_taken=None, prior=0):
-        self.black_bb, self.white_bb, self.current_player = game_state  # unpack the game_state tuple
+        #Unpack the tuple
+        black, white, player = game_state
+        self.black_bb = np.uint64(black)
+        self.white_bb = np.uint64(white)
+        self.current_player = int(player)
+
         self.args = args #a dictionary of hyperparameters to configure search. Ex. num_searches, exploration_constant...
 
         self.parent = parent #the parents node
@@ -48,8 +54,8 @@ class Node:
     
     @property
     def is_terminal(self):
-        return (len(get_moves(self.black_bb, self.white_bb)) == 0 and 
-                len(get_moves(self.white_bb, self.black_bb)) == 0)
+        return (move_gen(self.black_bb, self.white_bb) == 0 and
+                move_gen(self.white_bb, self.black_bb) == 0)
     
     def get_puct(self, child):
         if child.visit_count == 0:
@@ -85,14 +91,14 @@ class Node:
             new_black, new_white = apply_move(self.black_bb, self.white_bb, move)
 
             #Make sure white has legal moves, otherwise its blacks turn again
-            if len(get_moves(new_white, new_black)) == 0:
+            if move_gen(new_white, new_black) == 0:
                 player_turn = BLACK
             else:
                 player_turn = WHITE
         else:
             new_white, new_black = apply_move(self.white_bb, self.black_bb, move)
 
-            if len(get_moves(new_black, new_white)) == 0:
+            if move_gen(new_black, new_white) == 0:
                 player_turn = WHITE
             else:
                 player_turn = BLACK
@@ -121,11 +127,13 @@ class Node:
                 if black_moves:
                     move = random.choice(black_moves)
                     black_bb, white_bb = apply_move(black_bb, white_bb, move)
+                    black_bb, white_bb = np.uint64(black_bb), np.uint64(white_bb)
                 current_player = WHITE
             else:
                 if white_moves:
                     move = random.choice(white_moves)
                     white_bb, black_bb = apply_move(white_bb, black_bb, move)
+                    white_bb, black_bb = np.uint64(white_bb), np.uint64(black_bb)
                 current_player = BLACK
 
         black_count = popcount(black_bb)
@@ -217,7 +225,7 @@ class MCTS:
  
 
                 #3. SIMULATION
-                value = node.simulate()
+                value = node.simulate_rollout()
 
 
             #Once we reach either a simulated end, or actual terminal node, backpropagate the value

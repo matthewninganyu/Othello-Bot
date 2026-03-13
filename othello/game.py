@@ -6,12 +6,12 @@ from numba import njit, uint64
 
 class Game:
     def __init__(self):
-        self.black_bb = INIT_BLACK
-        self.white_bb = INIT_WHITE
-        self.current_player = BLACK # Black goes first
+        self.black_bb = np.uint64(INIT_BLACK)
+        self.white_bb = np.uint64(INIT_WHITE)
+        self.current_player = BLACK #black goes first
 
         # Stores the board state, the current player, and the move that led to this state (for undoing moves)
-        self.board_history = [(self.black_bb, self.white_bb, self.current_player, None)]
+        self.board_history = [(np.uint64(INIT_BLACK), np.uint64(INIT_WHITE), BLACK, None)]
     
     @property
     def game_over(self):
@@ -59,8 +59,8 @@ class Game:
         self.board_history.append((self.black_bb, self.white_bb, self.current_player, move))
 
         # Update the board and switch player
-        self.black_bb = new_black
-        self.white_bb = new_white
+        self.black_bb = np.uint64(new_black)
+        self.white_bb = np.uint64(new_white)
 
         if self.current_player == BLACK:
             if move_gen(self.white_bb, self.black_bb) == uint64(0):
