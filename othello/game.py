@@ -6,12 +6,12 @@ from numba import njit, uint64
 
 class Game:
     def __init__(self):
-        self.black_bb = INIT_BLACK
-        self.white_bb = INIT_WHITE
-        self.current_player = BLACK # Black goes first
+        self.black_bb = np.uint64(INIT_BLACK)
+        self.white_bb = np.uint64(INIT_WHITE)
+        self.current_player = BLACK #black goes first
 
         # Stores the board state, the current player, and the move that led to this state (for undoing moves)
-        self.board_history = [(self.black_bb, self.white_bb, self.current_player, None)]
+        self.board_history = [(np.uint64(INIT_BLACK), np.uint64(INIT_WHITE), BLACK, None)]
     
     @property
     def game_over(self):
@@ -59,8 +59,8 @@ class Game:
         self.board_history.append((self.black_bb, self.white_bb, self.current_player, move))
 
         # Update the board and switch player
-        self.black_bb = new_black
-        self.white_bb = new_white
+        self.black_bb = np.uint64(new_black)
+        self.white_bb = np.uint64(new_white)
 
         if self.current_player == BLACK:
             if move_gen(self.white_bb, self.black_bb) == uint64(0):
@@ -87,23 +87,3 @@ class Game:
                     print(".", end=" ")
             print()
 
-    #Get the value (win or lose) and is_terminated, used in MCTS search
-    def get_value_and_terminated(self):
-        if self.game_over:
-            black_count = popcount(self.black_bb)
-            white_count = popcount(self.white_bb)
-            
-            if black_count > white_count:
-                winner = BLACK
-            elif white_count > black_count:
-                winner = WHITE
-            else:
-                return 0, True  # draw
-            
-            # return 1 if current player won, -1 if they lost
-            if winner == self.current_player:
-                return 1, True
-            else:
-                return -1, True
-        
-        return 0, False

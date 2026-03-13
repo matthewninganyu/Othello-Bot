@@ -1,19 +1,31 @@
 from othello.game import Game
 from othello.board import BLACK, WHITE, notation_to_idx, idx_to_notation
+from othello.bot import MCTS
 
+args = {"num_searches": 200, "exploration_constant": 1.41}
 
 game = Game()
+mcts = MCTS(game, args)
 
 while not game.game_over:
     game.print_board()
-    print(f"Legal moves for {'Black' if game.current_player == BLACK else 'White'}: {[idx_to_notation(m) for m in game.legal_moves]}")
-    
-    try:
-        #Get user input as the move
-        move = str(input("Enter move notation: "))
-        move_index = notation_to_idx(move)
+    current = 'Black' if game.current_player == BLACK else 'White'
+    print(f"Legal moves for {current}: {[idx_to_notation(m) for m in game.legal_moves]}")
 
+    if game.current_player == BLACK:
+        # Human plays Black
+        try:
+            move = str(input("Enter move notation: "))
+            move_index = notation_to_idx(move)
+            game.make_move(move_index)
+        except ValueError as e:
+            print(f"Invalid move, try again: {e}")
+    else:
+        # Bot plays White
+        move_index = mcts.search()
+        print(f"Bot plays: {idx_to_notation(move_index)}")
         game.make_move(move_index)
 
-    except ValueError as e:
-        print(f"Invalid move, try again: {e}")
+game.print_board()
+winner = game.winner
+print(f"Game over! Winner: {'Black' if winner == BLACK else 'White' if winner == WHITE else 'Draw'}")

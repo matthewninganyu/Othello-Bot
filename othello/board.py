@@ -12,7 +12,7 @@ All hot functions are JIT-compiled with Numba
 
 from __future__ import annotations
 import numpy as np
-from numba import njit, uint64
+from numba import njit, uint64, int64
 
 ################################# CONSTANTS #################################
 
@@ -61,6 +61,7 @@ def popcount(bb):
     bb = (bb & uint64(0x3333333333333333)) + ((bb >> uint64(2)) & uint64(0x3333333333333333))
     bb = (bb + (bb >> uint64(4))) & uint64(0x0F0F0F0F0F0F0F0F)
     return int((bb * uint64(0x0101010101010101)) >> uint64(56))
+
 
 ################################### GAME ####################################
 
@@ -146,67 +147,86 @@ def apply_move(me, opp, move_idx):
     
     # East
     in_line = uint64(0)
-    checker = (move << 1) & EAST_BOUND
+    checker = (move & EAST_BOUND) << uint64(1)
     while checker & opp:
         in_line |= checker
-        checker <<= 1
         checker &= EAST_BOUND
+        checker <<= uint64(1)
     if (checker & me):
         flipped |= in_line
-    
+
     # West
     in_line = uint64(0)
-    checker = (move >> 1) & WEST_BOUND
+    checker = (move & WEST_BOUND) >> uint64(1)
     while checker & opp:
         in_line |= checker
-        checker >>= 1
         checker &= WEST_BOUND
+        checker >>= uint64(1)
     if (checker & me):
         flipped |= in_line
 
     # NE
     in_line = uint64(0)
-    checker = (move >> 7) & EAST_BOUND
+    checker = (move & EAST_BOUND) >> uint64(7)
     while checker & opp:
         in_line |= checker
-        checker >>= 7
         checker &= EAST_BOUND
+        checker >>= uint64(7)
     if (checker & me):
         flipped |= in_line
 
     # SE
     in_line = uint64(0)
-    checker = (move << 9) & EAST_BOUND
+    checker = (move & EAST_BOUND) << uint64(9)
     while checker & opp:
         in_line |= checker
-        checker <<= 9
         checker &= EAST_BOUND
+        checker <<= uint64(9)
     if (checker & me):
         flipped |= in_line
 
     # SW
     in_line = uint64(0)
-    checker = (move << 7) & WEST_BOUND
+    checker = (move & WEST_BOUND) << uint64(7)
     while checker & opp:
         in_line |= checker
-        checker <<= 7
         checker &= WEST_BOUND
+        checker <<= uint64(7)
     if (checker & me):
         flipped |= in_line
 
     # NW
     in_line = uint64(0)
-    checker = (move >> 9) & WEST_BOUND
+    checker = (move & WEST_BOUND) >> uint64(9)
     while checker & opp:
         in_line |= checker
-        checker >>= 9
         checker &= WEST_BOUND
+        checker >>= uint64(9)
     if (checker & me):
         flipped |= in_line
 
     me |= (flipped | move)
     opp ^= flipped
     return me, opp
+
+@njit(cache=True)
+def get_value_and_terminated(black_bb, white_bb, current_player):
+    if (len(get_moves(black_bb, white_bb)) == 0 and 
+            len(get_moves(white_bb, black_bb)) == 0):
+        
+        black_count = popcount(black_bb)
+        white_count = popcount(white_bb)
+        
+        if black_count > white_count:
+            winner = BLACK
+        elif white_count > black_count:
+            winner = WHITE
+        else:
+            return int64(0), True  # draw
+        
+        return (int64(1) if winner == current_player else int64(-1)), True
+    
+    return int64(0), False
 
 
 
