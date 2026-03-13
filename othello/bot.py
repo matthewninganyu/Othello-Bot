@@ -9,9 +9,9 @@ from .game import Game
 # from the current position and using the results to guide the search.
 #
 # Each iteration does 4 steps:
-#   1. Selection   - walk the tree using UCB1 to pick a promising node
+#   1. Selection   - walk the tree using PUCT to pick a promising node
 #   2. Expansion   - add a new child node for an unexplored move
-#   3. Simulation  - play out a random game from that node to the end
+#   3. Simulation  - play out a random game from that node to the end/Use nn to determine value
 #   4. Backprop    - update win/visit counts up the tree
 #
 # After N iterations, return the move with the most visits.
@@ -20,7 +20,7 @@ from .game import Game
 class Node:
     def __init__(self, game, args, parent=None, action_taken=None, prior=0):
         self.game = game #the game object
-        self.args = args #a dictionary of hyperparameters to configure search. Ex. num searches, exploration constant...
+        self.args = args #a dictionary of hyperparameters to configure search. Ex. num_searches, exploration_constant...
 
         self.parent = parent #the parents node
         self.action_taken = action_taken #move that led to this state
