@@ -1,6 +1,6 @@
 from othello.game import Game
 from othello.board import BLACK, WHITE, notation_to_idx, idx_to_notation
-from othello.bot import MCTS
+from othello.BetaFish import MCTS
 
 args = {"num_searches": 200, "exploration_constant": 1.41}
 

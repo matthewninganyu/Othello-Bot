@@ -186,6 +186,21 @@ class MCTS:
     def __init__(self, game, args):
         self.game = game
         self.args = args
+
+    def add_dirichlet_noise(self, node):
+        num_moves = len(node.children)
+
+        #Created a list of num_moves, filled with alpha
+        noise = np.random.dirichlet(self.args['dirichlet_alpha'] * num_moves)
+
+        epsilon = self.args['dirichlet_epsilon']
+        
+        for i, child in enumerate(node.children):
+            #Computes a weighted average for the actual child.prior, 
+            # and the random noice, with epsilon weight on the noise
+            child.prior = (1-epsilon)*child.prior + epsilon*noise[i]
+            
+
     
     def search(self):
         root = Node((self.game.black_bb, self.game.white_bb, self.game.current_player), self.args)
