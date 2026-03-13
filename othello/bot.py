@@ -83,10 +83,20 @@ class Node:
         #make the move
         if self.current_player == BLACK:
             new_black, new_white = apply_move(self.black_bb, self.white_bb, move)
-            player_turn = WHITE
+
+            #Make sure white has legal moves, otherwise its blacks turn again
+            if len(get_moves(new_white, new_black)) == 0:
+                player_turn = BLACK
+            else:
+                player_turn = WHITE
         else:
             new_white, new_black = apply_move(self.white_bb, self.black_bb, move)
-            player_turn = BLACK
+
+            if len(get_moves(new_black, new_white)) == 0:
+                player_turn = WHITE
+            else:
+                player_turn = BLACK
+
 
         #def __init__(self, game_state, args, parent=None, action_taken=None, prior=0):
         child = Node((new_black, new_white, player_turn), self.args, self, move, 0) #NO PRIOR PROBABILITIES FROM NETWORK YET
@@ -186,8 +196,25 @@ class MCTS:
             #On a unexplored, non-terminal leaf node
             if not is_terminal:
 
-                #2. EXPANSION (on non-terminal nodes)
-                node = node.expand() #returns a child, so node -> child
+                # Must-pass case, no expandable moves but its not a terminal state
+                if len(node.expandable_moves) == 0:
+                    next_player = WHITE if node.current_player == BLACK else BLACK
+
+                    pass_child = Node(
+                        (node.black_bb, node.white_bb, next_player),
+                        node.args,
+                        parent=node,
+                        action_taken=-1,   # pass
+                        prior=0
+                    )
+
+                    node.children.append(pass_child)
+                    node = pass_child
+
+                else:
+                    # 2. Expansion
+                    node = node.expand()
+ 
 
                 #3. SIMULATION
                 value = node.simulate()
