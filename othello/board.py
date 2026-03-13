@@ -147,61 +147,61 @@ def apply_move(me, opp, move_idx):
     
     # East
     in_line = uint64(0)
-    checker = (move << 1) & EAST_BOUND
+    checker = (move & EAST_BOUND) << uint64(1)
     while checker & opp:
         in_line |= checker
-        checker <<= 1
         checker &= EAST_BOUND
+        checker <<= uint64(1)
     if (checker & me):
         flipped |= in_line
-    
+
     # West
     in_line = uint64(0)
-    checker = (move >> 1) & WEST_BOUND
+    checker = (move & WEST_BOUND) >> uint64(1)
     while checker & opp:
         in_line |= checker
-        checker >>= 1
         checker &= WEST_BOUND
+        checker >>= uint64(1)
     if (checker & me):
         flipped |= in_line
 
     # NE
     in_line = uint64(0)
-    checker = (move >> 7) & EAST_BOUND
+    checker = (move & EAST_BOUND) >> uint64(7)
     while checker & opp:
         in_line |= checker
-        checker >>= 7
         checker &= EAST_BOUND
+        checker >>= uint64(7)
     if (checker & me):
         flipped |= in_line
 
     # SE
     in_line = uint64(0)
-    checker = (move << 9) & EAST_BOUND
+    checker = (move & EAST_BOUND) << uint64(9)
     while checker & opp:
         in_line |= checker
-        checker <<= 9
         checker &= EAST_BOUND
+        checker <<= uint64(9)
     if (checker & me):
         flipped |= in_line
 
     # SW
     in_line = uint64(0)
-    checker = (move << 7) & WEST_BOUND
+    checker = (move & WEST_BOUND) << uint64(7)
     while checker & opp:
         in_line |= checker
-        checker <<= 7
         checker &= WEST_BOUND
+        checker <<= uint64(7)
     if (checker & me):
         flipped |= in_line
 
     # NW
     in_line = uint64(0)
-    checker = (move >> 9) & WEST_BOUND
+    checker = (move & WEST_BOUND) >> uint64(9)
     while checker & opp:
         in_line |= checker
-        checker >>= 9
         checker &= WEST_BOUND
+        checker >>= uint64(9)
     if (checker & me):
         flipped |= in_line
 
