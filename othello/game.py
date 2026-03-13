@@ -74,16 +74,24 @@ class Game:
                 self.current_player = BLACK
 
     def print_board(self):
-        print("  A B C D E F G H")
+        B = "\033[1;34m  ⬤  \033[0m"
+        W = "\033[1;37m  ⬤  \033[0m"
+        E = "  ·  "
+
+        print("\n      A     B     C     D     E     F     G     H")
+        print("  ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐")
         for row in range(8):
-            print(row + 1, end=" ")
+            print(f"{row+1} │", end="")
             for col in range(8):
                 bit = row * 8 + col
                 if (self.black_bb >> bit) & 1:
-                    print("○", end=" ")
+                    print(B + "│", end="")
                 elif (self.white_bb >> bit) & 1:
-                    print("●", end=" ")
+                    print(W + "│", end="")
                 else:
-                    print(".", end=" ")
+                    print(E + "│", end="")
             print()
+            if row < 7:
+                print("  ├─────┼─────┼─────┼─────┼─────┼─────┼─────┼─────┤")
+        print("  └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘\n")
 

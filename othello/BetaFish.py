@@ -218,7 +218,7 @@ class MCTS:
 
             #Convert the visit counts to a list of probabilities to use for choosing move
             probabilities = [v/total for v in counts]
-            return random.choices(moves, weight=probabilities)[0]
+            return random.choices(moves, weights=probabilities)[0]
     
     def search(self):
         root = Node((self.game.black_bb, self.game.white_bb, self.game.current_player), self.args)
@@ -265,7 +265,7 @@ class MCTS:
             node.backpropagate(value)
 
         #Now after doing args.['num_searches'], we choose a move
-        self.choose_move(root, self.args['temperature'])
+        return self.choose_move(root, self.args['temperature'])
         
 
             
