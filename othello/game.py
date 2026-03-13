@@ -87,23 +87,3 @@ class Game:
                     print(".", end=" ")
             print()
 
-    #Get the value (win or lose) and is_terminated, used in MCTS search
-    def get_value_and_terminated(self):
-        if self.game_over:
-            black_count = popcount(self.black_bb)
-            white_count = popcount(self.white_bb)
-            
-            if black_count > white_count:
-                winner = BLACK
-            elif white_count > black_count:
-                winner = WHITE
-            else:
-                return 0, True  # draw
-            
-            # return 1 if current player won, -1 if they lost
-            if winner == self.current_player:
-                return 1, True
-            else:
-                return -1, True
-        
-        return 0, False

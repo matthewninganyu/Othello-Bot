@@ -1,7 +1,6 @@
-from .board import BLACK, WHITE, apply_move, move_gen, get_moves, popcount
+from .board import BLACK, WHITE, apply_move, move_gen, get_moves, popcount, get_value_and_terminated
 import math
 import random
-from .game import Game
 
 # MCTS Bot for Othello
 # ----------------------------------------
@@ -18,8 +17,8 @@ from .game import Game
 
 
 class Node:
-    def __init__(self, game, args, parent=None, action_taken=None, prior=0):
-        self.game = game #the game object
+    def __init__(self, game_state, args, parent=None, action_taken=None, prior=0):
+        self.black_bb, self.white_bb, self.current_player = game_state  # unpack the game_state tuple
         self.args = args #a dictionary of hyperparameters to configure search. Ex. num_searches, exploration_constant...
 
         self.parent = parent #the parents node
@@ -30,7 +29,11 @@ class Node:
         self.visit_count = 0
 
         self.children = []          # expanded child nodes
-        self.expandable_moves = list(game.legal_moves)
+        if self.current_player == BLACK:
+            self.expandable_moves = get_moves(self.black_bb, self.white_bb)
+        else:
+            self.expandable_moves = get_moves(self.white_bb, self.black_bb)
+
 
     @property
     def value(self):
@@ -45,7 +48,8 @@ class Node:
     
     @property
     def is_terminal(self):
-        return self.game.game_over
+        return (len(get_moves(self.black_bb, self.white_bb)) == 0 and 
+                len(get_moves(self.white_bb, self.black_bb)) == 0)
     
     def get_puct(self, child):
         if child.visit_count == 0:
@@ -76,17 +80,16 @@ class Node:
         idx = random.randrange(len(self.expandable_moves))
         move = self.expandable_moves.pop(idx)
 
-        #Create new node object (child)
-        new_game = Game()
-        new_game.black_bb = self.game.black_bb
-        new_game.white_bb = self.game.white_bb
-        new_game.current_player = self.game.current_player
-
         #make the move
-        new_game.make_move(move)
+        if self.current_player == BLACK:
+            new_black, new_white = apply_move(self.black_bb, self.white_bb, move)
+            player_turn = WHITE
+        else:
+            new_white, new_black = apply_move(self.white_bb, self.black_bb, move)
+            player_turn = BLACK
 
-        #def __init__(self, game, args, parent=None, action_taken=None, prior=0):
-        child = Node(new_game, self.args, self, move, 0) #NO PRIOR PROBABILITIES FROM NETWORK YET
+        #def __init__(self, game_state, args, parent=None, action_taken=None, prior=0):
+        child = Node((new_black, new_white, player_turn), self.args, self, move, 0) #NO PRIOR PROBABILITIES FROM NETWORK YET
 
         self.children.append(child)
 
@@ -97,26 +100,34 @@ class Node:
         return 0
 
     def simulate_rollout(self):
-        player = self.game.current_player
+        black_bb, white_bb, current_player = self.black_bb, self.white_bb, self.current_player
 
-        #Make a copy of game to use in the simulation
-        new_game = Game()
-        new_game.black_bb = self.game.black_bb
-        new_game.white_bb = self.game.white_bb
-        new_game.current_player = self.game.current_player
+        while True:
+            black_moves = get_moves(black_bb, white_bb)
+            white_moves = get_moves(white_bb, black_bb)
+            if not black_moves and not white_moves:
+                break
+            if current_player == BLACK:
+                if black_moves:
+                    move = random.choice(black_moves)
+                    black_bb, white_bb = apply_move(black_bb, white_bb, move)
+                current_player = WHITE
+            else:
+                if white_moves:
+                    move = random.choice(white_moves)
+                    white_bb, black_bb = apply_move(white_bb, black_bb, move)
+                current_player = BLACK
 
-        #Simulate random moves until the game ends
-        while not new_game.game_over:
-            random_move = random.choice(new_game.legal_moves)
-            new_game.make_move(random_move)
-
-        #Return value according to whos turn it was at the beginning of the rollout simulation
-        if player == new_game.winner:
-            return 1
-        elif new_game.winner == 0:
-            return 0
+        black_count = popcount(black_bb)
+        white_count = popcount(white_bb)
+        if black_count > white_count:
+            winner = BLACK
+        elif white_count > black_count:
+            winner = WHITE
         else:
-            return -1
+            return 0
+
+        return 1 if winner == self.current_player else -1
 
 
     def most_visited_child(self):
@@ -159,7 +170,7 @@ class MCTS:
         self.args = args
     
     def search(self):
-        root = Node(self.game, self.args)
+        root = Node((self.game.black_bb, self.game.white_bb, self.game.current_player), self.args)
 
         for i in range(self.args['num_searches']):
             node = root
@@ -170,7 +181,7 @@ class MCTS:
                 node = node.select_child()
             
             #Check if the game is over (terminal) and get the value
-            value, is_terminal = node.game.get_value_and_terminated()
+            value, is_terminal = get_value_and_terminated(node.black_bb, node.white_bb, node.current_player)
             
             #On a unexplored, non-terminal leaf node
             if not is_terminal:
