@@ -160,5 +160,5 @@ class ResNet(nn.Module):
             policy, value = self.forward(tensor)
             policy_probs = torch.exp(policy).squeeze(0).numpy()
             value = value.item()
-            return policy_probs, value
+            return policy_probs, value # (,64), (1)
 
