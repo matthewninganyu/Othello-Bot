@@ -222,7 +222,7 @@ class MCTS:
         policy_probs, value = self.model.inference(node.black_bb, node.white_bb, node.current_player, device=self.device)
         return policy_probs, value
     
-    def expand_node(self, node: Node):
+    def expand_node(self, node):
         policy_probs, value = self.eval(node)
 
         legal_moves = node.expandable_moves
@@ -271,11 +271,18 @@ class MCTS:
     def add_dirichlet_noise(self, node):
         num_moves = len(node.children)
 
+<<<<<<< HEAD
         # Created a list of num_moves, filled with alpha
+<<<<<<< HEAD
 <<<<<<< HEAD
         #Created a list of num_moves, filled with alpha
 =======
 >>>>>>> a1c5035601953bebedc34112663cb122abd1ed89
+=======
+=======
+        #Created a list of num_moves, filled with alpha
+>>>>>>> refs/remotes/origin/master
+>>>>>>> parent of a1c5035 (fix: search function)
         noise = np.random.dirichlet([self.args['dirichlet_alpha']] * num_moves)
 
         epsilon = self.args['dirichlet_epsilon']
@@ -344,15 +351,25 @@ class MCTS:
 
                 else:
                     # 2. Expansion using the policy network
-                    node, value = self.expand_node(node)
+                    node, value = self._expand_node_with_model(node)
 
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     
         #Now after doing args.['num_searches'], we choose a move
         return self.choose_move(root, self.args['temperature'])
+=======
+        # Now after doing args.['num_searches'], we return the best move
+        best_child = root.most_visited_child()
+        return best_child.action_taken if best_child else None
+=======
+        #Now after doing args.['num_searches'], we choose a move
+        return self.choose_move(root, self.args['temperature'])
+>>>>>>> refs/remotes/origin/master
+>>>>>>> parent of a1c5035 (fix: search function)
         
 
             
@@ -363,6 +380,9 @@ class MCTS:
 
 
 
+<<<<<<< HEAD
 =======
         return self.choose_move(root, self.args['temperature'])
 >>>>>>> a1c5035601953bebedc34112663cb122abd1ed89
+=======
+>>>>>>> parent of a1c5035 (fix: search function)
