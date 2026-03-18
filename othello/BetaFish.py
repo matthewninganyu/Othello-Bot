@@ -2,6 +2,7 @@ from .board import BLACK, WHITE, apply_move, move_gen, get_moves, popcount, get_
 import math
 import random
 import numpy as np
+from .model import ResNet, bb_to_tensor
 
 # MCTS Bot for Othello
 # ----------------------------------------
@@ -16,25 +17,52 @@ import numpy as np
 #
 # After N iterations, return the move with the most visits.
 
+################################# CONSTANTS #################################
+
+
+################################# OBJECTS #################################
 
 class Node:
-    def __init__(self, game_state, args, parent=None, action_taken=None, prior=0):
-        #Unpack the tuple
+    # Attributes:
+    #   black_bb, white_bb - position bitboards
+    #   current_player     - turn (BLACK or WHITE)
+    #   args               - dictionary of hyperparameters to configure search
+    #   parent             - parent node (None for root)
+    #   action_taken       - move index that led to this node
+    #   prior              - probability from parent
+    #   value_sum          - total value accumulated across visits
+    #   visit_count        - number of visits
+    #   children           - dict {move_idx: Node}
+    
+    #   value              - (int ) average of value_sum
+    #   is_expanded        - (bool) reached fully expanded state
+    #   is_terminal        - (bool) is in game end state
+    
+    def __init__(self, game_state, args, parent=None, action_taken=None, prior=0):        
+        # Parameters
+        # - game_state: tuple (black_bitboard, white_bitboard, current_player)
+        # - args: search hyperparameters (dict)
+        # - parent: parent Node or None for root
+        # - action_taken: move index that led to this node (or -1 for pass)
+        # - prior: prior probability from policy (float)
+
+        # Unpack the tuple
         black, white, player = game_state
         self.black_bb = np.uint64(black)
         self.white_bb = np.uint64(white)
         self.current_player = int(player)
 
-        self.args = args #a dictionary of hyperparameters to configure search. Ex. num_searches, exploration_constant...
+        self.args = args # dictionary of hyperparameters, e.g. num_searches, exploration_constant
 
-        self.parent = parent #the parents node
-        self.action_taken = action_taken #move that led to this state
+        self.parent = parent
+        self.action_taken = action_taken
 
-        self.prior = prior #probability from parent
+        self.prior = prior
         self.value_sum = 0
         self.visit_count = 0
 
-        self.children = []          # expanded child nodes
+        # Child nodes and remaining legal moves to expand
+        self.children = []
         if self.current_player == BLACK:
             self.expandable_moves = get_moves(self.black_bb, self.white_bb)
         else:
@@ -58,16 +86,23 @@ class Node:
                 move_gen(self.white_bb, self.black_bb) == 0)
     
     def get_puct(self, child):
+        # Compute the PUCT score for a child node.
+        # Returns exploitation + exploration term used to balance search.
+        
         if child.visit_count == 0:
             exploitation = 0
         else:
-            exploitation = child.value_sum/child.visit_count
+            exploitation = child.value_sum / child.visit_count
 
-        exploration = self.args["exploration_constant"]*child.prior* (math.sqrt(self.visit_count)/(1 + child.visit_count))
+        exploration = (
+            self.args["exploration_constant"]
+            * child.prior
+            * (math.sqrt(self.visit_count) / (1 + child.visit_count))
+        )
 
         return exploitation + exploration
 
-    #Finds the child with the best PUCT score
+    # Finds the child with the best PUCT score
     def select_child(self):
         best_boy = None
         best_puct = -math.inf
@@ -82,15 +117,14 @@ class Node:
         return best_boy
     
     def expand(self):
-        #Pick a random legal move
+        # Pick a random legal move
         idx = random.randrange(len(self.expandable_moves))
         move = self.expandable_moves.pop(idx)
 
-        #make the move
+        # Make the move and determine next player's turn
         if self.current_player == BLACK:
             new_black, new_white = apply_move(self.black_bb, self.white_bb, move)
-
-            #Make sure white has legal moves, otherwise its blacks turn again
+            # Ensure the opponent has moves; if not, turn remains the same
             if move_gen(new_white, new_black) == 0:
                 player_turn = BLACK
             else:
@@ -108,7 +142,6 @@ class Node:
         child = Node((new_black, new_white, player_turn), self.args, self, move, 0) #NO PRIOR PROBABILITIES FROM NETWORK YET
 
         self.children.append(child)
-
         return child
     
 
@@ -136,6 +169,7 @@ class Node:
                     white_bb, black_bb = np.uint64(white_bb), np.uint64(black_bb)
                 current_player = BLACK
 
+        # Determine winner from final piece counts
         black_count = popcount(black_bb)
         white_count = popcount(white_bb)
         if black_count > white_count:
@@ -157,66 +191,116 @@ class Node:
                 best_boy = child
                 highest_visits = child.visit_count
 
-        return best_boy #Returns None if there are no children
+        return best_boy # Returns None if there are no children
 
-    def backpropagate_iterative(self, value):
+    def backpropagate(self, value):
         node = self
 
-        #when there is still a parent node
+        # When there is still a parent node
         while node is not None:
 
-            #these are the 2 values we update
+            # Update accumulated value and visit count
             node.value_sum += value
             node.visit_count += 1
 
-            #Go up the tree to the parent node, negate value each iteration up
+            # Move up the tree and flip the perspective of the value
             node = node.parent
             value = -value
     
-    def backpropagate(self, value):
-        self.value_sum += value
-        self.visit_count += 1
-
-        #Recursive call, if there is a parent, keep traversing upwards until you get to the root
-        if self.parent:
-            self.parent.backpropagate(-value)
 
 
 class MCTS:
-    def __init__(self, game, args):
+    def __init__(self, game, model, args, device="mps"):
         self.game = game
+        self.model = model
         self.args = args
+        self.device = device
+
+    def eval(self, node):
+        policy_probs, value = self.model.inference(node.black_bb, node.white_bb, node.current_player, device=self.device)
+        return policy_probs, value
+    
+    def expand_node(self, node):
+        policy_probs, value = self.eval(node)
+
+        legal_moves = node.expandable_moves
+
+        if len(legal_moves) == 0:
+            return node, value
+        
+        priors = np.zeros(64, dtype=np.float64)
+        for m in legal_moves:
+            priors[m] = float(policy_probs[m])
+
+        s = priors.sum()
+        if s <= 0:
+            # fallback uniform over legal moves
+            for m in legal_moves:
+                priors[m] = 1.0 / len(legal_moves)
+        else:
+            priors /= priors.sum()
+
+        # Create child nodes for each legal move
+        for m in legal_moves:
+            if node.current_player == BLACK:
+                new_black, new_white = apply_move(node.black_bb, node.white_bb, m)
+                if move_gen(new_white, new_black) == 0:
+                    next_player = BLACK
+                else:
+                    next_player = WHITE
+            else:
+                new_white, new_black = apply_move(node.white_bb, node.black_bb, m)
+                if move_gen(new_black, new_white) == 0:
+                    next_player = WHITE
+                else:
+                    next_player = BLACK
+
+            child = Node((new_black, new_white, next_player), node.args, parent=node, action_taken=m, prior=float(priors[m]))
+            node.children.append(child)
+
+        # mark as expanded
+        node.expandable_moves = []
+
+        # select child with highest prior to continue the search
+        best_child = max(node.children, key=lambda c: c.prior)
+        return best_child, float(value)
+
 
     def add_dirichlet_noise(self, node):
         num_moves = len(node.children)
 
-        #Created a list of num_moves, filled with alpha
-        noise = np.random.dirichlet(self.args['dirichlet_alpha'] * num_moves)
+        # Created a list of num_moves, filled with alpha
+        noise = np.random.dirichlet([self.args['dirichlet_alpha']] * num_moves)
 
         epsilon = self.args['dirichlet_epsilon']
-        
+
         for i, child in enumerate(node.children):
-            #Computes a weighted average for the actual child.prior, 
+            # Computes a weighted average for the actual child.prior, 
             # and the random noice, with epsilon weight on the noise
-            child.prior = (1-epsilon)*child.prior + epsilon*noise[i]
+            child.prior = (1 - epsilon) * child.prior + epsilon * noise[i]
             
 
     
     def search(self):
         root = Node((self.game.black_bb, self.game.white_bb, self.game.current_player), self.args)
 
+        # Expand root with network priors before starting iterations
+        self.expand_node(root)
+        # Add exploration noise at the root (AlphaZero style)
+        self.add_dirichlet_noise(root)
+
         for i in range(self.args['num_searches']):
             node = root
 
-            #1. SELECTION
-            #if the node is fully expanded, go downwards and select its children
+            # 1. SELECTION
+            # If the node is fully expanded, go downwards and select its children
             while not node.is_terminal and node.is_expanded:
                 node = node.select_child()
             
-            #Check if the game is over (terminal) and get the value
+            # Check if the game is over (terminal) and get the value
             value, is_terminal = get_value_and_terminated(node.black_bb, node.white_bb, node.current_player)
-            
-            #On a unexplored, non-terminal leaf node
+
+            # On a unexplored, non-terminal leaf node
             if not is_terminal:
 
                 # Must-pass case, no expandable moves but its not a terminal state
@@ -235,18 +319,13 @@ class MCTS:
                     node = pass_child
 
                 else:
-                    # 2. Expansion
-                    node = node.expand()
- 
+                    # 2. Expansion using the policy network
+                    node, value = self._expand_node_with_model(node)
 
-                #3. SIMULATION
-                value = node.simulate_rollout()
-
-
-            #Once we reach either a simulated end, or actual terminal node, backpropagate the value
+            # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
 
-        #Now after doing args.['num_searches'], we return the best move
+        # Now after doing args.['num_searches'], we return the best move
         best_child = root.most_visited_child()
         return best_child.action_taken if best_child else None
         

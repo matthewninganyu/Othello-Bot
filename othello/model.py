@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from numba import uint64
+from board import BLACK, WHITE
 
 #############################################################################
 # Helpers
@@ -20,7 +21,7 @@ def get_rotations(black_bb, white_bb, turn: int, policy: np.ndarray):
     black_plane, white_plane = bb_to_np(black_bb, white_bb) # x2 (2, 8, 8)
     policy_2d = policy.reshape(8, 8) # (,64) -> (8, 8)
 
-    if turn == 1:
+    if turn == BLACK:
         turn_plane = np.ones((8, 8), dtype=np.uint8)
         board = np.stack([black_plane, 
                           white_plane, 
@@ -46,7 +47,7 @@ def get_rotations(black_bb, white_bb, turn: int, policy: np.ndarray):
 def bb_to_tensor(black_bb, white_bb, turn: int, device="mps"):
     black_plane, white_plane = bb_to_np(black_bb, white_bb)
     
-    if turn == 1:
+    if turn == BLACK:
         turn_plane = np.ones((8, 8), dtype=np.uint8)
         board = np.stack([black_plane, 
                           white_plane, 
