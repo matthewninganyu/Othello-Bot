@@ -9,9 +9,6 @@ class Game:
         self.black_bb = np.uint64(INIT_BLACK)
         self.white_bb = np.uint64(INIT_WHITE)
         self.current_player = BLACK #black goes first
-
-        # Stores the board state, the current player, and the move that led to this state (for undoing moves)
-        self.board_history = [(np.uint64(INIT_BLACK), np.uint64(INIT_WHITE), BLACK, None)]
     
     @property
     def game_over(self):
@@ -54,9 +51,6 @@ class Game:
             new_black, new_white = apply_move(self.black_bb, self.white_bb, move)
         else:
             new_white, new_black = apply_move(self.white_bb, self.black_bb, move)
-
-        # Save the current state before making the move
-        self.board_history.append((self.black_bb, self.white_bb, self.current_player, move))
 
         # Update the board and switch player
         self.black_bb = np.uint64(new_black)
