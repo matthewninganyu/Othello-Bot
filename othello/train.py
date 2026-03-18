@@ -36,7 +36,7 @@ CONFIG = {
     # Self-play
     "n_iterations":         50,     # outer loop: self-play → train → evaluate
     "n_self_play_games":    25,     # games to play per iteration
-    "num_searches":         200,    # MCTS simulations per move
+    "num_searches":         400,    # MCTS simulations per move
     "temperature":          1.0,    # exploration temp (moves 1 to temperature_drop)
     "temperature_drop":     30,     # move number to switch to greedy (temp=0)
  
@@ -52,7 +52,7 @@ CONFIG = {
     "weight_decay":         1e-4,   # L2 regularisation
  
     # Evaluation
-    "n_eval_games":         20,     # games per colour side (40 total)
+    "n_eval_games":         50,     # games per colour side (40 total)
     "win_rate_threshold":   0.55,   # must beat old model by this margin to promote
  
     # MCTS
