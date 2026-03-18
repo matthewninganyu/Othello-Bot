@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves
+from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves, is_game_over
 import numpy as np
 from numba import njit, uint64
 
@@ -15,7 +15,7 @@ class Game:
     
     @property
     def game_over(self):
-        return (move_gen(self.black_bb, self.white_bb) == uint64(0) and move_gen(self.white_bb, self.black_bb) == uint64(0))
+        return is_game_over(self.black_bb, self.white_bb)
     
     @property
     def winner(self):

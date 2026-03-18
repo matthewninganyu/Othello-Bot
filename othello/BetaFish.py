@@ -210,7 +210,6 @@ class Node:
             value = -value
     
 
-
 class MCTS:
     def __init__(self, game, model, args, device="mps"):
         self.game = game
@@ -262,7 +261,7 @@ class MCTS:
 
         # mark as expanded
         node.expandable_moves = []
-
+        
         return node, float(value)
 
 

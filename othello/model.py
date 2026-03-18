@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 from numba import uint64
 from board import BLACK, WHITE
+from game import Game
 
 #############################################################################
 # Helpers
@@ -16,35 +17,7 @@ def bb_to_np(black_bb, white_bb):
         white_np[i] = (int(white_bb) >> i) & 1
     return black_np.reshape(8, 8), white_np.reshape(8, 8)
 
-# Return all 8 symmetries of board in 8 (position, policy) pairs
-def get_rotations(black_bb, white_bb, turn: int, policy: np.ndarray):
-    black_plane, white_plane = bb_to_np(black_bb, white_bb) # x2 (2, 8, 8)
-    policy_2d = policy.reshape(8, 8) # (,64) -> (8, 8)
-
-    if turn == BLACK:
-        turn_plane = np.ones((8, 8), dtype=np.uint8)
-        board = np.stack([black_plane, 
-                          white_plane, 
-                          turn_plane], axis=0)
-    else:
-        turn_plane = np.zeros((8, 8), dtype=np.uint8)
-        board = np.stack([white_plane, 
-                          black_plane, 
-                          turn_plane], axis=0)
-
-    rotations = []
-    for i in range(4):
-        b = np.rot90(board, i, axes=(1, 2))
-        p = np.rot90(policy_2d, i)
-        rotations.append((b, p))
-        
-        b_mirror = np.flip(b, axis=2)
-        p_mirror = np.flip(p, axis=1)
-        rotations.append((b_mirror, p_mirror))
-
-    return rotations
-
-def bb_to_tensor(black_bb, white_bb, turn: int, device="mps"):
+def bb_to_planes(black_bb, white_bb, turn: int):
     black_plane, white_plane = bb_to_np(black_bb, white_bb)
     
     if turn == BLACK:
@@ -58,8 +31,18 @@ def bb_to_tensor(black_bb, white_bb, turn: int, device="mps"):
                           black_plane, 
                           turn_plane], axis=0)
     
+    return board
+
+def bb_to_tensor(black_bb, white_bb, turn: int, device="mps"):
+    board = bb_to_planes(black_bb, white_bb, turn)
     tensor = torch.tensor(board, dtype=torch.float32, device=device)
     return tensor.unsqueeze(0)
+
+def board_to_planes(game: Game):
+    return bb_to_planes(game.black_bb, game.white_bb, game.current_player)
+
+def board_to_tensor(game: Game):
+    return bb_to_tensor(game.black_bb, game.white_bb, game.current_player)
     
 
 #############################################################################
