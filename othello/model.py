@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 from numba import uint64
-from board import BLACK, WHITE
-from game import Game
+from othello.board import BLACK, WHITE
+from othello.game import Game
 
 #############################################################################
 # Helpers
@@ -141,8 +141,10 @@ class ResNet(nn.Module):
         self.eval()
         with torch.no_grad():
             tensor = bb_to_tensor(black_bb, white_bb, turn, device)
+            tensor = tensor.to(device)
             policy, value = self.forward(tensor)
-            policy_probs = policy.squeeze(0).numpy()
-            value = value.item()
-            return policy_probs, value # (,64), (1)
+            # Move outputs to CPU before converting to NumPy
+            policy_probs = policy.squeeze(0).cpu().numpy()
+            value = float(value.cpu().item())
+            return policy_probs, value
 

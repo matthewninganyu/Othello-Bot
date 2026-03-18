@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves, is_game_over
+from othello.board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves, is_game_over
 import numpy as np
 from numba import njit, uint64
 
