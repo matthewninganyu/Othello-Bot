@@ -21,6 +21,12 @@ from .model import ResNet, bb_to_tensor
 
 
 ################################# OBJECTS #################################
+# args keys:
+#   'num_searches'         (int)   - MCTS iterations per move
+#   'exploration_constant' (float) - PUCT exploration weight; higher = more exploration
+#   'dirichlet_alpha'      (float) - Dirichlet noise concentration (~0.3 for Othello)
+#   'dirichlet_epsilon'    (float) - Noise mix at root; 0 = pure policy, 1 = pure noise
+#   'temperature'          (float) - Move sampling; 0 = greedy, 1 = visit-proportional
 
 class Node:
     # Attributes:
@@ -215,7 +221,8 @@ class MCTS:
     def __init__(self, game, model, args, device="mps"):
         self.game = game
         self.model = model
-        self.args = args
+        self.args = args 
+        #{"num_searches": #, "exploration_constant": #, "temperature": #, dirichlet_alpha: #, dirichlet_epsilon: #}
         self.device = device
 
     def eval(self, node):
@@ -228,7 +235,7 @@ class MCTS:
         legal_moves = node.expandable_moves
 
         if len(legal_moves) == 0:
-            return node, value
+            return value
         
         priors = np.zeros(64, dtype=np.float64)
         for m in legal_moves:
@@ -263,9 +270,7 @@ class MCTS:
         # mark as expanded
         node.expandable_moves = []
 
-        # select child with highest prior to continue the search
-        best_child = max(node.children, key=lambda c: c.prior)
-        return best_child, float(value)
+        return value
 
 
     def add_dirichlet_noise(self, node):
@@ -332,15 +337,15 @@ class MCTS:
                         node.args,
                         parent=node,
                         action_taken=-1,   # pass
-                        prior=0
+                        prior=1 #100% pick rate since its the only option
                     )
 
                     node.children.append(pass_child)
                     node = pass_child
 
-                else:
-                    # 2. Expansion using the policy network
-                    node, value = self.expand_node(node)
+
+                # 2. Expansion using the policy network
+                value = self.expand_node(node)
 
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
