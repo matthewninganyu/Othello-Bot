@@ -222,7 +222,7 @@ class MCTS:
         policy_probs, value = self.model.inference(node.black_bb, node.white_bb, node.current_player, device=self.device)
         return policy_probs, value
     
-    def expand_node(self, node):
+    def expand_node(self, node: Node):
         policy_probs, value = self.eval(node)
 
         legal_moves = node.expandable_moves
@@ -272,7 +272,10 @@ class MCTS:
         num_moves = len(node.children)
 
         # Created a list of num_moves, filled with alpha
+<<<<<<< HEAD
         #Created a list of num_moves, filled with alpha
+=======
+>>>>>>> a1c5035601953bebedc34112663cb122abd1ed89
         noise = np.random.dirichlet([self.args['dirichlet_alpha']] * num_moves)
 
         epsilon = self.args['dirichlet_epsilon']
@@ -341,11 +344,12 @@ class MCTS:
 
                 else:
                     # 2. Expansion using the policy network
-                    node, value = self._expand_node_with_model(node)
+                    node, value = self.expand_node(node)
 
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
 
+<<<<<<< HEAD
     
         #Now after doing args.['num_searches'], we choose a move
         return self.choose_move(root, self.args['temperature'])
@@ -359,3 +363,6 @@ class MCTS:
 
 
 
+=======
+        return self.choose_move(root, self.args['temperature'])
+>>>>>>> a1c5035601953bebedc34112663cb122abd1ed89
