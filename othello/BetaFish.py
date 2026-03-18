@@ -116,7 +116,9 @@ class Node:
 
         return best_boy
     
-    def expand(self):
+
+
+    def expand_random(self):
         # Pick a random legal move
         idx = random.randrange(len(self.expandable_moves))
         move = self.expandable_moves.pop(idx)
@@ -269,11 +271,8 @@ class MCTS:
     def add_dirichlet_noise(self, node):
         num_moves = len(node.children)
 
-<<<<<<< HEAD
         # Created a list of num_moves, filled with alpha
-=======
         #Created a list of num_moves, filled with alpha
->>>>>>> refs/remotes/origin/master
         noise = np.random.dirichlet([self.args['dirichlet_alpha']] * num_moves)
 
         epsilon = self.args['dirichlet_epsilon']
@@ -347,14 +346,9 @@ class MCTS:
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
 
-<<<<<<< HEAD
-        # Now after doing args.['num_searches'], we return the best move
-        best_child = root.most_visited_child()
-        return best_child.action_taken if best_child else None
-=======
+    
         #Now after doing args.['num_searches'], we choose a move
         return self.choose_move(root, self.args['temperature'])
->>>>>>> refs/remotes/origin/master
         
 
             
