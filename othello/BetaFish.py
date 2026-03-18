@@ -1,8 +1,8 @@
-from .board import BLACK, WHITE, apply_move, move_gen, get_moves, popcount, get_value_and_terminated
+from othello.board import BLACK, WHITE, apply_move, move_gen, get_moves, popcount, get_value_and_terminated
 import math
 import random
 import numpy as np
-from .model import ResNet, bb_to_tensor
+from othello.model import ResNet, bb_to_tensor
 
 # MCTS Bot for Othello
 # ----------------------------------------

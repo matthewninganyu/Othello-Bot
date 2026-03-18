@@ -21,10 +21,10 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
-from board import BLACK, WHITE
-from game import Game
-from model import board_to_planes, board_to_tensor, ResNet
-from BetaFish import MCTS
+from othello.board import BLACK, WHITE
+from othello.game import Game
+from othello.model import board_to_planes, board_to_tensor, ResNet
+from othello.BetaFish import MCTS
 
 ################################# CONSTANTS #################################
 
@@ -36,7 +36,7 @@ CONFIG = {
     # Self-play
     "n_iterations":         50,     # outer loop: self-play → train → evaluate
     "n_self_play_games":    25,     # games to play per iteration
-    "num_searches":         400,    # MCTS simulations per move
+    "num_searches":         200,    # MCTS simulations per move
     "temperature":          1.0,    # exploration temp (moves 1 to temperature_drop)
     "temperature_drop":     30,     # move number to switch to greedy (temp=0)
  
@@ -289,3 +289,15 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
             path = os.path.join(args["checkpoint_dir"], f"model_iter{iteration}.pt")
             torch.save(model.state_dict(), path)
             print(f"Checkpoint saved: {path}")
+
+if __name__ == "__main__":
+    if torch.backends.mps.is_available():
+        device = "mps"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
+    
+    training_loop(model, optimizer, CONFIG, device)
