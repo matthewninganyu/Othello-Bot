@@ -2,7 +2,7 @@ from othello.game import Game
 from othello.board import BLACK, WHITE, notation_to_idx, idx_to_notation
 from othello.BetaFish import MCTS
 
-args = {"num_searches": 200, "exploration_constant": 1.41}
+args = {"num_searches": 800, "exploration_constant": 1.41, "temperature": 0}
 
 game = Game()
 mcts = MCTS(game, args)

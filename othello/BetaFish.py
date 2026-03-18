@@ -269,7 +269,11 @@ class MCTS:
     def add_dirichlet_noise(self, node):
         num_moves = len(node.children)
 
+<<<<<<< HEAD
         # Created a list of num_moves, filled with alpha
+=======
+        #Created a list of num_moves, filled with alpha
+>>>>>>> refs/remotes/origin/master
         noise = np.random.dirichlet([self.args['dirichlet_alpha']] * num_moves)
 
         epsilon = self.args['dirichlet_epsilon']
@@ -279,7 +283,25 @@ class MCTS:
             # and the random noice, with epsilon weight on the noise
             child.prior = (1 - epsilon) * child.prior + epsilon * noise[i]
             
+    def choose_move(self, root, temperature):
+        #0 temperature is no exploration - always pick best move
+        #1 and above are more explorative
+        visit_counts = [child.visit_count for child in root.children]
+        moves = [child.action_taken for child in root.children]
 
+        #Greedy - Always picks move visits
+        if temperature == 0:
+            max_visit_count = max(visit_counts)
+            max_idx = visit_counts.index(max_visit_count) 
+            return moves[max_idx]
+        else:
+            # sample proportional to visit_count^(1/temperature)
+            counts = [v ** (1/temperature) for v in visit_counts]
+            total = sum(counts)
+
+            #Convert the visit counts to a list of probabilities to use for choosing move
+            probabilities = [v/total for v in counts]
+            return random.choices(moves, weights=probabilities)[0]
     
     def search(self):
         root = Node((self.game.black_bb, self.game.white_bb, self.game.current_player), self.args)
@@ -325,9 +347,14 @@ class MCTS:
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
 
+<<<<<<< HEAD
         # Now after doing args.['num_searches'], we return the best move
         best_child = root.most_visited_child()
         return best_child.action_taken if best_child else None
+=======
+        #Now after doing args.['num_searches'], we choose a move
+        return self.choose_move(root, self.args['temperature'])
+>>>>>>> refs/remotes/origin/master
         
 
             
