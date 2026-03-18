@@ -222,7 +222,7 @@ class MCTS:
         policy_probs, value = self.model.inference(node.black_bb, node.white_bb, node.current_player, device=self.device)
         return policy_probs, value
     
-    def expand_node(self, node):
+    def expand_node(self, node: Node):
         policy_probs, value = self.eval(node)
 
         legal_moves = node.expandable_moves
@@ -340,7 +340,7 @@ class MCTS:
 
                 else:
                     # 2. Expansion using the policy network
-                    node, value = self._expand_node_with_model(node)
+                    node, value = self.expand_node(node)
 
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
