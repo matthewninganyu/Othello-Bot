@@ -210,25 +210,8 @@ def apply_move(me, opp, move_idx):
     return me, opp
 
 @njit(cache=True)
-def get_value_and_terminated(black_bb, white_bb, current_player):
-    if (len(get_moves(black_bb, white_bb)) == 0 and 
-            len(get_moves(white_bb, black_bb)) == 0):
-        
-        black_count = popcount(black_bb)
-        white_count = popcount(white_bb)
-        
-        if black_count > white_count:
-            winner = BLACK
-        elif white_count > black_count:
-            winner = WHITE
-        else:
-            return int64(0), True  # draw
-        
-        return (int64(1) if winner == current_player else int64(-1)), True
-    
-    return int64(0), False
-
-
+def game_over(black_bb, white_bb):
+    return (move_gen(black_bb, white_bb) == 0) and (move_gen(white_bb, black_bb) == 0)
 
 ################################ EASE OF USE ################################
 
@@ -257,3 +240,19 @@ def notation_to_idx(notation: str) -> int:
         raise ValueError(f"Invalid notation: '{notation}'")
     return row * 8 + col
 
+@njit(cache=True)
+def get_value_and_terminated(black_bb, white_bb, current_player):
+    if game_over(black_bb, white_bb):
+        black_count = popcount(black_bb)
+        white_count = popcount(white_bb)
+        
+        if black_count > white_count:
+            winner = BLACK
+        elif white_count > black_count:
+            winner = WHITE
+        else:
+            return int64(0), True  # draw
+        
+        return (int64(1) if winner == current_player else int64(-1)), True
+    
+    return int64(0), False

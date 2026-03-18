@@ -90,7 +90,7 @@ class ResidualBlock(nn.Module):
         )
 
     def forward(self, X):
-        return nn.ReLU(X + self.block(X), inplace=True)
+        return nn.functional.relu(X + self.block(X), inplace=True)
     
 class PolicyHead(nn.Module):
     def __init__(self, filters, board_size=8):
@@ -157,9 +157,9 @@ class ResNet(nn.Module):
     def inference(self, black_bb, white_bb, turn, device="mps"):
         self.eval()
         with torch.no_grad():
-            tensor = bb_to_tensor(black_bb, white_bb, turn)
+            tensor = bb_to_tensor(black_bb, white_bb, turn, device)
             policy, value = self.forward(tensor)
-            policy_probs = torch.exp(policy).squeeze(0).numpy()
+            policy_probs = policy.squeeze(0).numpy()
             value = value.item()
             return policy_probs, value # (,64), (1)
 

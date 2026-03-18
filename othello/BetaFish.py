@@ -263,9 +263,7 @@ class MCTS:
         # mark as expanded
         node.expandable_moves = []
 
-        # select child with highest prior to continue the search
-        best_child = max(node.children, key=lambda c: c.prior)
-        return best_child, float(value)
+        return node, float(value)
 
 
     def add_dirichlet_noise(self, node):
@@ -345,16 +343,15 @@ class MCTS:
             # Backpropagate the value (value is from network or terminal evaluation)
             node.backpropagate(value)
 
-    
-        #Now after doing args.['num_searches'], we choose a move
-        return self.choose_move(root, self.args['temperature'])
-        
-
-            
-                
-
-    
-
-
-
+        policy = np.zeros(64, dtype=np.float32)
+        for child in root.children:
+            if child.action_taken >= 0:  # exclude pass moves
+                policy[child.action_taken] = child.visit_count
+ 
+        total = policy.sum()
+        if total > 0:
+            policy /= total  # normalise to probability distribution
+ 
+        move = self.choose_move(root, self.args['temperature'])
+        return move, policy
 
