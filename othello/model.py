@@ -138,13 +138,20 @@ class ResNet(nn.Module):
         return policy, value
 
     def inference(self, black_bb, white_bb, turn, device="mps"):
-        self.eval()
         with torch.no_grad():
             tensor = bb_to_tensor(black_bb, white_bb, turn, device)
             tensor = tensor.to(device)
             policy, value = self.forward(tensor)
-            # Move outputs to CPU before converting to NumPy
             policy_probs = policy.squeeze(0).cpu().numpy()
             value = float(value.cpu().item())
             return policy_probs, value
+
+    def inference_batch(self, positions: list, device: str):
+        # positions: list of (black_bb, white_bb, turn) tuples
+        # Returns: policies (N, 64) and values (N,) as numpy arrays
+        planes = np.stack([bb_to_planes(b, w, t) for b, w, t in positions], axis=0)
+        states = torch.tensor(planes, dtype=torch.float32).to(device)
+        with torch.no_grad():
+            policies, values = self.forward(states)
+        return policies.cpu().numpy(), values.squeeze(-1).cpu().numpy()
 

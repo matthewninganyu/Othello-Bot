@@ -16,6 +16,7 @@
 # games: [(board (3, 8, 8), policy, value)]
 
 from collections import deque
+from datetime import datetime
 import os
 import random
 import numpy as np
@@ -23,7 +24,7 @@ import torch
 import torch.nn as nn
 from othello.board import BLACK, WHITE
 from othello.game import Game
-from othello.model import board_to_planes, board_to_tensor, ResNet
+from othello.model import board_to_planes, ResNet
 from othello.BetaFish import MCTS
 
 ################################# CONSTANTS #################################
@@ -50,9 +51,10 @@ CONFIG = {
     "batch_size":           128,
     "lr":                   1e-3,
     "weight_decay":         1e-4,   # L2 regularisation
+    "n_parallel_games":     100,      # for distributed Modal: how many games to run in parallel during self-play
  
     # Evaluation
-    "n_eval_games":         50,     # games per colour side (40 total)
+    "n_eval_games":         15,     # games per colour side 
     "win_rate_threshold":   0.55,   # must beat old model by this margin to promote
  
     # MCTS
@@ -62,7 +64,7 @@ CONFIG = {
  
     # Checkpointing
     "checkpoint_dir":       "checkpoints",
-    "checkpoint_every":     5,      # save every N iterations
+    "checkpoint_every":     1,      # save every N iterations
 }
 
 ################################# HELPERS #################################
@@ -103,63 +105,65 @@ def get_rotations(board: np.ndarray, policy: np.ndarray):
 
 ################################# SELF-PLAY #################################
 
-def play_game(model: ResNet, args, device):
-    # Temperature schedule:
-    #     Moves < temperature_drop  → args["temperature"]  (explore)
-    #     Moves >= temperature_drop → 0                    (greedy)
+def run_self_play(buffer: ReplayBuffer, model: ResNet, args, device):
+    # Runs all n_self_play_games simultaneously, calling search_batch each step
+    # so every move across all games shares a single batched NN forward pass.
+    #
+    # Temperature schedule per game:
+    #     move_count < temperature_drop  → args["temperature"]  (explore)
+    #     move_count >= temperature_drop → 0                    (greedy)
+    model.eval()
+    n = args["n_self_play_games"]
 
-    # Value labelling:
-    #     After the game, every stored position is labelled:
-    #        +1.0  if the player to move at that position won
-    #        -1.0  if they lost
-    #         0.0  if draw
-    game = Game()
-    bot = MCTS(game, model, args, device)
-    history = []
-    move_count = 0
+    games       = [Game() for _ in range(n)]
+    histories   = [[] for _ in range(n)]
+    move_counts = [0] * n
+    mcts        = MCTS(games[0], model, args, device)
 
-    while not game.game_over:
-        temp = args["temperature"] if move_count < args["temperature_drop"] else 0
-
-        # Temporarily patch temperature for this search call
-        saved_temp = args["temperature"]
-        args["temperature"] = temp
-        move, policy = bot.search()
-        args["temperature"] = saved_temp
-
-        if move is None:
-            print("Error: move was none")
+    while True:
+        active = [i for i in range(n) if not games[i].game_over]
+        if not active:
             break
 
-        history.append((board_to_planes(game), policy, game.current_player, move_count))
-        game.make_move(move)
-        move_count += 1
+        # Split active games by temperature so each group gets one search_batch call
+        explore = [i for i in active if move_counts[i] <  args["temperature_drop"]]
+        greedy  = [i for i in active if move_counts[i] >= args["temperature_drop"]]
 
-    winner = game.winner
-    samples = []
+        results = {}
 
-    for board_planes, policy, player, turn in history:
-        if winner == 0:
-            val = 0
-        else:
-            val = 1 if winner == player else -1
-        
-        if turn > 3:
-            for b, p in get_rotations(board_planes, policy):
-                samples.append((b, p, val))
-    
-    return samples
+        if explore:
+            for idx, (move, policy) in zip(explore, mcts.search_batch([games[i] for i in explore])):
+                results[idx] = (move, policy)
 
-def run_self_play(buffer: ReplayBuffer, model: ResNet, args, device):
-    model.eval()
+        if greedy:
+            saved = args["temperature"]
+            args["temperature"] = 0
+            for idx, (move, policy) in zip(greedy, mcts.search_batch([games[i] for i in greedy])):
+                results[idx] = (move, policy)
+            args["temperature"] = saved
+
+        for i in active:
+            move, policy = results[i]
+            if move is None:
+                continue
+            histories[i].append((board_to_planes(games[i]), policy, games[i].current_player, move_counts[i]))
+            games[i].make_move(move)
+            move_counts[i] += 1
+
+    #number of training examples
     total_gen = 0
-
-    for i in range(args["n_self_play_games"]):
-        samples = play_game(model, args, device)
+    for i in range(n):
+        winner = games[i].winner
+        samples = []
+        for board_planes, policy, player, turn in histories[i]:
+            val = 0 if winner == 0 else (1 if winner == player else -1)
+            if turn > 3:
+                for b, p in get_rotations(board_planes, policy):
+                    samples.append((b, p, val))
         buffer.add_game(samples)
         total_gen += len(samples)
-        print(f"  Game {i+1}/{args['n_self_play_games']} — {len(samples)//8} moves")
-    
+        print(f"  Game {i+1}/{n} — {len(samples)//8} moves")
+
     return total_gen
 
 ################################# TRAINING #################################
@@ -204,56 +208,73 @@ def run_training(
 
 ################################# EVALUATION #################################
 
-def eval_game(new_model: ResNet, best_model: ResNet, new_plays_as: int, args, device) -> int:
-    # Returns +1 if new_model wins, 0 for draw, -1 if best_model wins.
-    # Both bots share the same game object so each reads the live board state.
-    eval_args = {**args, "temperature": 0, "dirichlet_epsilon": 0.0}
-
-    game = Game()
-    new_bot  = MCTS(game, new_model,  eval_args, device)
-    best_bot = MCTS(game, best_model, eval_args, device)
-
-    while not game.game_over:
-        bot = new_bot if game.current_player == new_plays_as else best_bot
-        move, _ = bot.search() #we don't need the policy here, just the move
-        if move is None:
-            break
-        game.make_move(move)
-
-    winner = game.winner
-    if winner == new_plays_as:
-        return 1
-    elif winner == 0:
-        return 0
-    else:
-        return -1
-
-
 def evaluate_models(new_model: ResNet, best_model: ResNet, args, device) -> float:
-    # Plays n_eval_games as each color (2 * n_eval_games total).
+    # Runs all 2*n_eval_games simultaneously using search_batch.
+    # First n games: new_model plays BLACK. Next n: new_model plays WHITE.
     # Returns new_model's win rate; draws count as 0.5.
     new_model.eval()
     best_model.eval()
 
-    n = args["n_eval_games"]
+    n     = args["n_eval_games"]
+    total = n * 2
+    eval_args    = {**args, "temperature": 0, "dirichlet_epsilon": 0}
+    opening_ply  = args.get("eval_opening_ply", 4)  # random moves before MCTS takes over
+
+    games        = [Game() for _ in range(total)]
+    new_plays_as = [BLACK] * n + [WHITE] * n
+    move_counts  = [0] * total
+
+    new_mcts  = MCTS(games[0], new_model,  eval_args, device)
+    best_mcts = MCTS(games[0], best_model, eval_args, device)
+
+    while True:
+        active = [i for i in range(total) if not games[i].game_over]
+        if not active:
+            break
+
+        # Opening phase: play random moves to diversify starting positions
+        opening = [i for i in active if move_counts[i] < opening_ply]
+        mcts_active = [i for i in active if move_counts[i] >= opening_ply]
+
+        for i in opening:
+            move = random.choice(games[i].legal_moves)
+            games[i].make_move(move)
+            move_counts[i] += 1
+
+        new_turn  = [i for i in mcts_active if games[i].current_player == new_plays_as[i]]
+        best_turn = [i for i in mcts_active if games[i].current_player != new_plays_as[i]]
+
+        results = {}
+        if new_turn:
+            for idx, (move, _) in zip(new_turn, new_mcts.search_batch([games[i] for i in new_turn])):
+                results[idx] = move
+        if best_turn:
+            for idx, (move, _) in zip(best_turn, best_mcts.search_batch([games[i] for i in best_turn])):
+                results[idx] = move
+
+        for i in mcts_active:
+            move = results.get(i)
+            if move is None:
+                continue
+            games[i].make_move(move)
+            move_counts[i] += 1
+
     wins = 0.0
+    for i in range(total):
+        winner = games[i].winner
+        wins += 1 if winner == new_plays_as[i] else (0.5 if winner == 0 else 0)
+        color  = 'BLACK' if new_plays_as[i] == BLACK else 'WHITE'
+        label  = 'win' if winner == new_plays_as[i] else ('draw' if winner == 0 else 'loss')
+        print(f"  [{i+1}/{total}] new={color} → {label}")
+        games[i].print_board()
 
-    for i in range(n):
-        result = eval_game(new_model, best_model, BLACK, args, device)
-        wins += 1 if result == 1 else (0.5 if result == 0 else 0)
-        print(f"  [{i+1}/{n*2}] new=BLACK  → {'win' if result == 1 else 'draw' if result == 0 else 'loss'}")
-
-    for i in range(n):
-        result = eval_game(new_model, best_model, WHITE, args, device)
-        wins += 1 if result == 1 else (0.5 if result == 0 else 0)
-        print(f"  [{n+i+1}/{n*2}] new=WHITE → {'win' if result == 1 else 'draw' if result == 0 else 'loss'}")
-
-    win_rate = wins / (n * 2)
-    return win_rate
+    return wins / total
 
 
 def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device):
     buffer = ReplayBuffer(max_pos=args["buffer_max_games"] * 60 * 8)
+
+    run_dir = os.path.join(args["checkpoint_dir"], datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     #Creates a copy of the current model to evaluate against. This allows us to compare the new model's performance against the previous best model without interference from ongoing training updates.
     best_model = ResNet(args["n_res_blocks"], args["filters"]).to(device)
@@ -271,33 +292,30 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
         p_loss, v_loss = run_training(model, optimizer, buffer, args, device)
         print(f"Policy loss: {p_loss:.4f}, Value loss: {v_loss:.4f}")
 
-        #Evaluate phase: compare the two models
-        print("Evaluation phase:")
-        win_rate = evaluate_models(model, best_model, args, device)
-        print(f"Win rate: {win_rate:.2%} (threshold: {args['win_rate_threshold']:.2%})")
+        #Evaluate phase: compare the two models (skip first 25 iterations)
+        if iteration > 25:
+            print("Evaluation phase:")
+            win_rate = evaluate_models(model, best_model, args, device)
+            print(f"Win rate: {win_rate:.2%} (threshold: {args['win_rate_threshold']:.2%})")
 
-        if win_rate >= args["win_rate_threshold"]:
-            print("New model promoted!")
-            best_model.load_state_dict(model.state_dict())
+            if win_rate >= args["win_rate_threshold"]:
+                print("New model promoted!")
+                best_model.load_state_dict(model.state_dict())
+            else:
+                print("Not promoted, reverting to best model.")
+                model.load_state_dict(best_model.state_dict())
         else:
-            print("Not promoted, reverting to best model.")
-            model.load_state_dict(best_model.state_dict())
+            print(f"Skipping evaluation (iteration {iteration}/25 warmup)")
 
         #Create a checkpoint every N iterations depending on args["checkpoint_every"]
         if iteration % args["checkpoint_every"] == 0:
-            os.makedirs(args["checkpoint_dir"], exist_ok=True)
-            path = os.path.join(args["checkpoint_dir"], f"model_iter{iteration}.pt")
+            os.makedirs(run_dir, exist_ok=True)
+            path = os.path.join(run_dir, f"model_iter{iteration}.pt")
             torch.save(model.state_dict(), path)
             print(f"Checkpoint saved: {path}")
 
 if __name__ == "__main__":
-    if torch.backends.mps.is_available():
-        device = "mps"
-    elif torch.cuda.is_available():
-        device = "cuda"
-    else:
-        device = "cpu"
+    device = "cuda"
     model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
-    
     training_loop(model, optimizer, CONFIG, device)

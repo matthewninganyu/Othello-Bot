@@ -2,7 +2,7 @@ from othello.board import BLACK, WHITE, apply_move, move_gen, get_moves, popcoun
 import math
 import random
 import numpy as np
-from othello.model import ResNet, bb_to_tensor
+from othello.model import ResNet
 
 # MCTS Bot for Othello
 # ----------------------------------------
@@ -98,7 +98,9 @@ class Node:
         if child.visit_count == 0:
             exploitation = 0
         else:
-            exploitation = child.value_sum / child.visit_count
+            # Negate: child.value_sum is from the child's player's perspective,
+            # but the parent wants to maximise from its own perspective.
+            exploitation = -(child.value_sum / child.visit_count)
 
         exploration = (
             self.args["exploration_constant"]
@@ -228,47 +230,41 @@ class MCTS:
         policy_probs, value = self.model.inference(node.black_bb, node.white_bb, node.current_player, device=self.device)
         return policy_probs, value
     
-    def expand_node(self, node: Node):
-        policy_probs, value = self.eval(node)
-
+    def _attach_children(self, node: Node, policy_probs):
+        # Shared helper: create child nodes from policy probs and mark node as expanded
         legal_moves = node.expandable_moves
 
-        if len(legal_moves) == 0:
-            return value
-        
         priors = np.zeros(64, dtype=np.float64)
         for m in legal_moves:
             priors[m] = float(policy_probs[m])
 
         s = priors.sum()
         if s <= 0:
-            # fallback uniform over legal moves
             for m in legal_moves:
                 priors[m] = 1.0 / len(legal_moves)
         else:
-            priors /= priors.sum()
+            priors /= s
 
-        # Create child nodes for each legal move
         for m in legal_moves:
             if node.current_player == BLACK:
                 new_black, new_white = apply_move(node.black_bb, node.white_bb, m)
-                if move_gen(new_white, new_black) == 0:
-                    next_player = BLACK
-                else:
-                    next_player = WHITE
+                next_player = BLACK if move_gen(new_white, new_black) == 0 else WHITE
             else:
                 new_white, new_black = apply_move(node.white_bb, node.black_bb, m)
-                if move_gen(new_black, new_white) == 0:
-                    next_player = WHITE
-                else:
-                    next_player = BLACK
+                next_player = WHITE if move_gen(new_black, new_white) == 0 else BLACK
 
             child = Node((new_black, new_white, next_player), node.args, parent=node, action_taken=m, prior=float(priors[m]))
             node.children.append(child)
 
-        # mark as expanded
         node.expandable_moves = []
 
+    def expand_node(self, node: Node):
+        policy_probs, value = self.eval(node)
+
+        if len(node.expandable_moves) == 0:
+            return value
+
+        self._attach_children(node, policy_probs)
         return value
 
 
@@ -288,8 +284,11 @@ class MCTS:
     def choose_move(self, root, temperature):
         #0 temperature is no exploration - always pick best move
         #1 and above are more explorative
-        visit_counts = [child.visit_count for child in root.children]
-        moves = [child.action_taken for child in root.children]
+        valid = [c for c in root.children if c.action_taken >= 0]
+        if not valid:
+            return None
+        visit_counts = [child.visit_count for child in valid]
+        moves = [child.action_taken for child in valid]
 
         #Greedy - Always picks move visits
         if temperature == 0:
@@ -361,3 +360,85 @@ class MCTS:
         move = self.choose_move(root, self.args['temperature'])
         return move, policy
 
+    #MCTS functions but for BATCHES of games at once, increasing efficiency and speed
+    def expand_batch(self, nodes: list) -> list:
+        if not nodes:
+            return []
+
+        positions = [(n.black_bb, n.white_bb, n.current_player) for n in nodes]
+        policies, values = self.model.inference_batch(positions, self.device)
+
+        for i, node in enumerate(nodes):
+            if not node.expandable_moves:
+                node.expandable_moves = []
+                continue
+            self._attach_children(node, policies[i])
+
+        return list(values)
+
+
+    def search_batch(self, games: list) -> list:
+        # Returns [(move, policy), ...] for each game — same format as search()
+        roots = [
+            Node((g.black_bb, g.white_bb, g.current_player), self.args)
+            for g in games
+        ]
+
+        self.expand_batch(roots)
+        for root in roots:
+            if root.children:
+                self.add_dirichlet_noise(root)
+
+        #Main loop
+        for _ in range(self.args['num_searches']):
+            # 1. SELECTION
+            leaves = []
+            for root in roots:
+                node = root
+                while not node.is_terminal and node.is_expanded:
+                    node = node.select_child()
+
+                leaves.append(node)
+
+            # 2. CHECK TERMINAL + MUST-PASS
+            to_expand = []
+            terminal_backprop = []
+
+            for node in leaves:
+                value, is_terminal = get_value_and_terminated(
+                    node.black_bb, node.white_bb, node.current_player)
+                if is_terminal:
+                    terminal_backprop.append((node, float(value)))
+                elif len(node.expandable_moves) == 0:
+                    next_player = WHITE if node.current_player == BLACK else BLACK
+                    pass_child = Node(
+                        (node.black_bb, node.white_bb, next_player),
+                        node.args, parent=node, action_taken=-1, prior=1
+                    )
+                    node.children.append(pass_child)
+                    to_expand.append(pass_child)
+                else:
+                    to_expand.append(node)
+
+            # 3. BATCH EXPAND
+            if to_expand:
+                exp_values = self.expand_batch(to_expand)
+                for node, value in zip(to_expand, exp_values):
+                    node.backpropagate(value)
+
+            for node, value in terminal_backprop:
+                node.backpropagate(value)
+
+        results = []
+        for root in roots:
+            policy = np.zeros(64, dtype=np.float32)
+            for child in root.children:
+                if child.action_taken >= 0:
+                    policy[child.action_taken] = child.visit_count
+            total = policy.sum()
+            if total > 0:
+                policy /= total
+            move = self.choose_move(root, self.args['temperature'])
+            results.append((move, policy))
+
+        return results
