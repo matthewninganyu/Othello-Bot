@@ -4,3 +4,11 @@
 /othello/__pycache__/
 /tests/__pycache__/
 CLAUDE.md
+checkpoints/
+*.pt
+*.pth
+__pycache__/
+*.pyc
+venv/
+.venv/
+tests/test_vs_egaroucid.py

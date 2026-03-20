@@ -16,9 +16,10 @@ from numba import njit, uint64, int64
 
 ################################# CONSTANTS #################################
 
-# Turn
+# Turn / result constants
 BLACK = 0
 WHITE = 1
+DRAW  = 2   # distinct from BLACK and WHITE so winner==0 is unambiguous
 
 # Starting board
 INIT_BLACK = uint64(1 << 28 | 1 << 35)

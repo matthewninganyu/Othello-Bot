@@ -17,6 +17,7 @@
 
 from collections import deque
 from datetime import datetime
+import csv
 import os
 import random
 import numpy as np
@@ -35,27 +36,24 @@ CONFIG = {
     "filters":              128,
  
     # Self-play
-    "n_iterations":         50,     # outer loop: self-play → train → evaluate
-    "n_self_play_games":    25,     # games to play per iteration
-    "num_searches":         200,    # MCTS simulations per move
-    "temperature":          1.0,    # exploration temp (moves 1 to temperature_drop)
-    "temperature_drop":     30,     # move number to switch to greedy (temp=0)
+    "n_iterations":         1000,
+    "n_self_play_games":    200,       # 25 → 50: more diverse positions per iter
+    "num_searches":         400,     
+    "temperature":          1.0,
+    "temperature_drop":     20,
  
     # Replay buffer
-    # Capacity = buffer_max_games * avg_moves_per_game * 8 symmetries
-    # 500 games * 60 moves * 8 = 240,000 positions
-    "buffer_max_games":     500,
+    "buffer_max_games":     2000,
  
     # Training
-    "n_epochs":             4,      # gradient passes over sampled batches per iteration
-    "batch_size":           128,
+    "n_epochs":             6,        # 4 → 6: more updates per batch of data
+    "batch_size":           256,      # 128 → 256: better GPU utilisation
     "lr":                   1e-3,
-    "weight_decay":         1e-4,   # L2 regularisation
-    "n_parallel_games":     100,      # for distributed Modal: how many games to run in parallel during self-play
+    "weight_decay":         1e-4,
  
     # Evaluation
-    "n_eval_games":         15,     # games per colour side 
-    "win_rate_threshold":   0.55,   # must beat old model by this margin to promote
+    "n_eval_games":         10,       # 15 → 10: evaluation was eating self-play budget
+    "win_rate_threshold":   0.52,     # 0.55 → 0.52: paired with fewer eval games
  
     # MCTS
     "dirichlet_alpha":      0.3,
@@ -64,7 +62,7 @@ CONFIG = {
  
     # Checkpointing
     "checkpoint_dir":       "checkpoints",
-    "checkpoint_every":     1,      # save every N iterations
+    "checkpoint_every":     10,
 }
 
 ################################# HELPERS #################################
@@ -125,22 +123,12 @@ def run_self_play(buffer: ReplayBuffer, model: ResNet, args, device):
         if not active:
             break
 
-        # Split active games by temperature so each group gets one search_batch call
-        explore = [i for i in active if move_counts[i] <  args["temperature_drop"]]
-        greedy  = [i for i in active if move_counts[i] >= args["temperature_drop"]]
-
+        # All active games in one batch; pass per-game temperature so greedy
+        # games (past temperature_drop) get temperature=0 without a second forward pass.
+        temps   = [args["temperature"] if move_counts[i] < args["temperature_drop"] else 0 for i in active]
         results = {}
-
-        if explore:
-            for idx, (move, policy) in zip(explore, mcts.search_batch([games[i] for i in explore])):
-                results[idx] = (move, policy)
-
-        if greedy:
-            saved = args["temperature"]
-            args["temperature"] = 0
-            for idx, (move, policy) in zip(greedy, mcts.search_batch([games[i] for i in greedy])):
-                results[idx] = (move, policy)
-            args["temperature"] = saved
+        for idx, (move, policy) in zip(active, mcts.search_batch([games[i] for i in active], temps)):
+            results[idx] = (move, policy)
 
         for i in active:
             move, policy = results[i]
@@ -156,13 +144,12 @@ def run_self_play(buffer: ReplayBuffer, model: ResNet, args, device):
         winner = games[i].winner
         samples = []
         for board_planes, policy, player, turn in histories[i]:
-            val = 0 if winner == 0 else (1 if winner == player else -1)
+            val = 0 if winner == None else (1 if winner == player else -1)
             if turn > 3:
                 for b, p in get_rotations(board_planes, policy):
                     samples.append((b, p, val))
         buffer.add_game(samples)
         total_gen += len(samples)
-        print(f"  Game {i+1}/{n} — {len(samples)//8} moves")
 
     return total_gen
 
@@ -178,33 +165,34 @@ def run_training(
     model.train()
     value_criterion = nn.MSELoss()
  
-    p_loss_out = v_loss_out = 0.0
- 
-    for epoch in range(args["n_epochs"]):
+    p_loss_sum = v_loss_sum = 0.0
+
+    for _ in range(args["n_epochs"]):
         boards, policies, values = buffer.get_batch(args["batch_size"])
         boards   = boards.to(device)
         policies = policies.to(device)
         values   = values.to(device)
- 
+
         pred_policy, pred_value = model(boards)
- 
+
         # Cross-entropy manually (policy head outputs softmax, not logits)
         # Small epsilon prevents log(0)
         p_loss = -(policies * torch.log(pred_policy + 1e-8)).sum(dim=1).mean()
         v_loss = value_criterion(pred_value.squeeze(-1), values)
         loss   = p_loss + v_loss
- 
+
         optimizer.zero_grad()
         loss.backward()
         # Gradient clipping: prevents exploding gradients in deep ResNets.
         # max_norm=1.0 is a safe standard value — rarely triggers but catches spikes.
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
- 
-        p_loss_out = p_loss.item()
-        v_loss_out = v_loss.item()
- 
-    return p_loss_out, v_loss_out
+
+        p_loss_sum += p_loss.item()
+        v_loss_sum += v_loss.item()
+
+    n = args["n_epochs"]
+    return p_loss_sum / n, v_loss_sum / n
 
 ################################# EVALUATION #################################
 
@@ -262,11 +250,10 @@ def evaluate_models(new_model: ResNet, best_model: ResNet, args, device) -> floa
     wins = 0.0
     for i in range(total):
         winner = games[i].winner
-        wins += 1 if winner == new_plays_as[i] else (0.5 if winner == 0 else 0)
+        wins += 1 if winner == new_plays_as[i] else (0.5 if winner is None else 0)
         color  = 'BLACK' if new_plays_as[i] == BLACK else 'WHITE'
-        label  = 'win' if winner == new_plays_as[i] else ('draw' if winner == 0 else 'loss')
+        label  = 'win' if winner == new_plays_as[i] else ('draw' if winner is None else 'loss')
         print(f"  [{i+1}/{total}] new={color} → {label}")
-        games[i].print_board()
 
     return wins / total
 
@@ -274,7 +261,13 @@ def evaluate_models(new_model: ResNet, best_model: ResNet, args, device) -> floa
 def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device):
     buffer = ReplayBuffer(max_pos=args["buffer_max_games"] * 60 * 8)
 
-    run_dir = os.path.join(args["checkpoint_dir"], datetime.now().strftime("%Y%m%d_%H%M%S"))
+    run_dir  = os.path.join(args["checkpoint_dir"], datetime.now().strftime("%Y%m%d_%H%M%S"))
+    os.makedirs(run_dir, exist_ok=True)
+    log_path = os.path.join(run_dir, "loss_log.csv")
+    log_file = open(log_path, "a", newline="")
+    log_writer = csv.writer(log_file)
+    if os.path.getsize(log_path) == 0:
+        log_writer.writerow(["iteration", "policy_loss", "value_loss", "total_loss"])
 
     #Creates a copy of the current model to evaluate against. This allows us to compare the new model's performance against the previous best model without interference from ongoing training updates.
     best_model = ResNet(args["n_res_blocks"], args["filters"]).to(device)
@@ -290,10 +283,12 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
         #Training phase, train `model`
         print("Training phase:")
         p_loss, v_loss = run_training(model, optimizer, buffer, args, device)
-        print(f"Policy loss: {p_loss:.4f}, Value loss: {v_loss:.4f}")
+        print(f"Policy loss: {p_loss:.4f}, Value loss: {v_loss:.4f}, Total: {p_loss+v_loss:.4f}")
+        log_writer.writerow([iteration, f"{p_loss:.6f}", f"{v_loss:.6f}", f"{p_loss+v_loss:.6f}"])
+        log_file.flush()
 
         #Evaluate phase: compare the two models (skip first 25 iterations)
-        if iteration > 25:
+        if iteration > 0:
             print("Evaluation phase:")
             win_rate = evaluate_models(model, best_model, args, device)
             print(f"Win rate: {win_rate:.2%} (threshold: {args['win_rate_threshold']:.2%})")
@@ -316,6 +311,15 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
 
 if __name__ == "__main__":
     device = "cuda"
+
+    # RESUME_CHECKPOINT = "checkpoints/20260319_193347/model_iter25.pt"
+    
+    # model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
+    # if RESUME_CHECKPOINT and os.path.exists(RESUME_CHECKPOINT):
+    #     model.load_state_dict(torch.load(RESUME_CHECKPOINT, map_location=device))
+    #     print(f"Resumed from {RESUME_CHECKPOINT}")
+
     model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
     training_loop(model, optimizer, CONFIG, device)

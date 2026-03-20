@@ -5,14 +5,14 @@ from othello.model import ResNet
 from othello.BetaFish import MCTS
 import os
 
-CHECKPOINT = "checkpoints/model_iter5.pt"  # set to None to use untrained model
+CHECKPOINT = "checkpoints/20260319_000252/model_iter324.pt"  # set to None to use untrained model
 
 args = {
     "num_searches":         200,
     "exploration_constant": 1.5,
     "temperature":          0,
-    "dirichlet_alpha":      0.3,
-    "dirichlet_epsilon":    0.1,
+    "dirichlet_alpha":      0,
+    "dirichlet_epsilon":    0,
 }
 
 device = "cuda" if torch.cuda.is_available() else "cpu"

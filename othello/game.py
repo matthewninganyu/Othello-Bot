@@ -1,5 +1,5 @@
 from __future__ import annotations
-from othello.board import BLACK, WHITE, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves, is_game_over
+from othello.board import BLACK, WHITE, DRAW, INIT_BLACK, INIT_WHITE, popcount, apply_move, move_gen, get_moves, is_game_over
 import numpy as np
 from numba import njit, uint64
 
@@ -27,7 +27,7 @@ class Game:
         elif white > black:
             return WHITE
         else:
-            return 0 # Tie
+            return None # Tie
         
     @property
     def legal_moves(self):

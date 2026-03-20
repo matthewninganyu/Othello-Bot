@@ -269,6 +269,9 @@ class MCTS:
 
 
     def add_dirichlet_noise(self, node):
+        if self.args["dirichlet_epsilon"] == 0:
+            return  # skip noise entirely during evaluation/testing
+        
         num_moves = len(node.children)
 
         #Created a list of num_moves, filled with alpha
@@ -377,8 +380,9 @@ class MCTS:
         return list(values)
 
 
-    def search_batch(self, games: list) -> list:
+    def search_batch(self, games: list, temperatures: list = None) -> list:
         # Returns [(move, policy), ...] for each game — same format as search()
+        # temperatures: optional per-game temperature list (defaults to args["temperature"])
         roots = [
             Node((g.black_bb, g.white_bb, g.current_player), self.args)
             for g in games
@@ -429,8 +433,13 @@ class MCTS:
             for node, value in terminal_backprop:
                 node.backpropagate(value)
 
+        #Makes sure the MCTS search is working properly, not short circuiting
+        for i, root in enumerate(roots):
+            assert root.visit_count == self.args["num_searches"], \
+                f"Game {i}: expected {self.args['num_searches']} visits, got {root.visit_count}"
+
         results = []
-        for root in roots:
+        for i, root in enumerate(roots):
             policy = np.zeros(64, dtype=np.float32)
             for child in root.children:
                 if child.action_taken >= 0:
@@ -438,7 +447,8 @@ class MCTS:
             total = policy.sum()
             if total > 0:
                 policy /= total
-            move = self.choose_move(root, self.args['temperature'])
+            temp = temperatures[i] if temperatures is not None else self.args['temperature']
+            move = self.choose_move(root, temp)
             results.append((move, policy))
 
         return results
