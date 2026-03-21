@@ -219,7 +219,7 @@ class Node:
     
 
 class MCTS:
-    def __init__(self, game, model, args, device="mps"):
+    def __init__(self, game, model, args, device="cuda"):
         self.game = game
         self.model = model
         self.args = args 
