@@ -9,13 +9,12 @@ from othello.game import Game
 # Helpers
 
 # x2 uint64 bitboards to 2 planes of uint8 arrays.
+_SHIFTS = np.arange(64, dtype=np.uint64)
+
 def bb_to_np(black_bb, white_bb):
-    black_np = np.zeros(64, dtype=np.uint8)
-    white_np = np.zeros(64, dtype=np.uint8)
-    for i in range(64):
-        black_np[i] = (int(black_bb) >> i) & 1
-        white_np[i] = (int(white_bb) >> i) & 1
-    return black_np.reshape(8, 8), white_np.reshape(8, 8)
+    black_np = ((np.uint64(black_bb) >> _SHIFTS) & np.uint64(1)).astype(np.uint8).reshape(8, 8)
+    white_np = ((np.uint64(white_bb) >> _SHIFTS) & np.uint64(1)).astype(np.uint8).reshape(8, 8)
+    return black_np, white_np
 
 def bb_to_planes(black_bb, white_bb, turn: int):
     black_plane, white_plane = bb_to_np(black_bb, white_bb)
@@ -33,7 +32,7 @@ def bb_to_planes(black_bb, white_bb, turn: int):
     
     return board
 
-def bb_to_tensor(black_bb, white_bb, turn: int, device="mps"):
+def bb_to_tensor(black_bb, white_bb, turn: int, device="cuda"):
     board = bb_to_planes(black_bb, white_bb, turn)
     tensor = torch.tensor(board, dtype=torch.float32, device=device)
     return tensor.unsqueeze(0)
@@ -137,7 +136,7 @@ class ResNet(nn.Module):
         value  = self.value_head(X)   # (batch, 1)
         return policy, value
 
-    def inference(self, black_bb, white_bb, turn, device="mps"):
+    def inference(self, black_bb, white_bb, turn, device="cuda"):
         with torch.no_grad():
             tensor = bb_to_tensor(black_bb, white_bb, turn, device)
             tensor = tensor.to(device)
