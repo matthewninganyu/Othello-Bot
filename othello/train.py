@@ -15,7 +15,8 @@
 
 # games: [(board (3, 8, 8), policy, value)]
 
-from collections import deque
+
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import csv
 import os
@@ -69,21 +70,28 @@ CONFIG = {
 
 class ReplayBuffer:
     def __init__(self, max_pos):
-        self.buffer = deque(maxlen=max_pos)
-    
+        self.buffer  = [None] * max_pos
+        self.max_pos = max_pos
+        self.size    = 0
+        self.ptr     = 0
+
     def add_game(self, game_data):
-        self.buffer.extend(game_data)
+        for sample in game_data: # for circular buffer handling
+            self.buffer[self.ptr] = sample
+            self.ptr  = (self.ptr + 1) % self.max_pos
+            self.size = min(self.size + 1, self.max_pos)
 
     def get_batch(self, batch_size):
-        batch = random.sample(self.buffer, min(batch_size, len(self.buffer)))
+        indices = random.sample(range(self.size), min(batch_size, self.size))
+        batch = [self.buffer[i] for i in indices]
         boards, policies, values = zip(*batch)
-        boards = torch.tensor(np.array(boards), dtype=torch.float32)
+        boards   = torch.tensor(np.array(boards),   dtype=torch.float32)
         policies = torch.tensor(np.array(policies), dtype=torch.float32)
-        values = torch.tensor(np.array(values), dtype=torch.float32)
+        values   = torch.tensor(np.array(values),   dtype=torch.float32)
         return boards, policies, values
-    
+
     def __len__(self):
-        return len(self.buffer)
+        return self.size
     
 # Return all 8 symmetries of board and policy
 # Returns 8 x (board (3,8,8), policy (64,))
@@ -101,6 +109,15 @@ def get_rotations(board: np.ndarray, policy: np.ndarray):
 
     return rotations
 
+def process_game(history, winner):
+    samples = []
+    for board_planes, policy, player, turn in history:
+        val = 0 if winner is None else (1 if winner == player else -1)
+        if turn > 3:
+            for b, p in get_rotations(board_planes, policy):
+                samples.append((b, p, val))
+    return samples
+
 ################################# SELF-PLAY #################################
 
 def run_self_play(buffer: ReplayBuffer, model: ResNet, args, device):
@@ -117,39 +134,39 @@ def run_self_play(buffer: ReplayBuffer, model: ResNet, args, device):
     histories   = [[] for _ in range(n)]
     move_counts = [0] * n
     mcts        = MCTS(games[0], model, args, device)
+    active      = set(range(n))
 
-    while True:
-        active = [i for i in range(n) if not games[i].game_over]
-        if not active:
-            break
+    while active:
+        active_list = sorted(active)
 
         # All active games in one batch; pass per-game temperature so greedy
         # games (past temperature_drop) get temperature=0 without a second forward pass.
-        temps   = [args["temperature"] if move_counts[i] < args["temperature_drop"] else 0 for i in active]
+        temps   = [args["temperature"] if move_counts[i] < args["temperature_drop"] else 0 for i in active_list]
         results = {}
-        for idx, (move, policy) in zip(active, mcts.search_batch([games[i] for i in active], temps)):
+        for idx, (move, policy) in zip(active_list, mcts.search_batch([games[i] for i in active_list], temps)):
             results[idx] = (move, policy)
 
-        for i in active:
+        for i in active_list:
             move, policy = results[i]
             if move is None:
+                if games[i].game_over:
+                    active.discard(i)
                 continue
             histories[i].append((board_to_planes(games[i]), policy, games[i].current_player, move_counts[i]))
             games[i].make_move(move)
             move_counts[i] += 1
+            if games[i].game_over:
+                active.discard(i)
 
-    #number of training examples
+    # Parallelize retroactive value labeling + 8x symmetry generation across games.
+    # NumPy releases the GIL during rot90/flip, so threads run concurrently.
     total_gen = 0
-    for i in range(n):
-        winner = games[i].winner
-        samples = []
-        for board_planes, policy, player, turn in histories[i]:
-            val = 0 if winner == None else (1 if winner == player else -1)
-            if turn > 3:
-                for b, p in get_rotations(board_planes, policy):
-                    samples.append((b, p, val))
-        buffer.add_game(samples)
-        total_gen += len(samples)
+    with ThreadPoolExecutor as executor:
+        for samples in executor.map(process_game,
+                                    histories,
+                                    [games[i].winner for i in range(n)]):
+            buffer.add_game(samples)
+            total_gen += len(samples)
 
     return total_gen
 
@@ -259,8 +276,9 @@ def evaluate_models(new_model: ResNet, best_model: ResNet, args, device) -> floa
 
 
 def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device):
-    buffer = ReplayBuffer(max_pos=args["buffer_max_games"] * 60 * 8)
+    buffer = ReplayBuffer(max_pos=args["buffer_max_games"] * 60 * 8) # 60 turns per game, x8 from position symmetries
 
+    # New checkpoint folder for new training run.
     run_dir  = os.path.join(args["checkpoint_dir"], datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(run_dir, exist_ok=True)
     log_path = os.path.join(run_dir, "loss_log.csv")
@@ -269,10 +287,12 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
     if os.path.getsize(log_path) == 0:
         log_writer.writerow(["iteration", "policy_loss", "value_loss", "total_loss"])
 
-    #Creates a copy of the current model to evaluate against. This allows us to compare the new model's performance against the previous best model without interference from ongoing training updates.
+    # Creates a copy of the current model to evaluate against.
+    # This allows us to compare the new model's performance against the previous best model without interference from ongoing training updates.
     best_model = ResNet(args["n_res_blocks"], args["filters"]).to(device)
     best_model.load_state_dict(model.state_dict())
 
+    # TODO: Add optimizer LR scheduler too.
     for iteration in range(1, args["n_iterations"] + 1):
         if iteration <= 25:
             args["num_searches"]      = 150
@@ -284,20 +304,20 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
             args["num_searches"]      = 400
             args["n_self_play_games"] = 200
 
-        #Self play phase
+        # Self play phase
         print(f"\n=== Iteration {iteration}/{args['n_iterations']} ===")
         print("Self-play phase:")
         total_gen = run_self_play(buffer, model, args, device)
         print(f"Generated {total_gen} training samples. Buffer size: {len(buffer)}")
 
-        #Training phase, train `model`
+        # Training phase, train `model`
         print("Training phase:")
         p_loss, v_loss = run_training(model, optimizer, buffer, args, device)
         print(f"Policy loss: {p_loss:.4f}, Value loss: {v_loss:.4f}, Total: {p_loss+v_loss:.4f}")
         log_writer.writerow([iteration, f"{p_loss:.6f}", f"{v_loss:.6f}", f"{p_loss+v_loss:.6f}"])
         log_file.flush()
 
-        #Evaluate phase: compare the two models (skip first specified iterations)
+        # Evaluate phase: compare the two models (skip first specified iterations)
         if iteration > 20:
             print("Evaluation phase:")
             win_rate = evaluate_models(model, best_model, args, device)
@@ -312,7 +332,7 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
         else:
             print(f"Skipping evaluation (iteration {iteration}/25 warmup)")
 
-        #Create a checkpoint every N iterations depending on args["checkpoint_every"]
+        # Create a checkpoint every N iterations depending on args["checkpoint_every"]
         if iteration % args["checkpoint_every"] == 0:
             os.makedirs(run_dir, exist_ok=True)
             path = os.path.join(run_dir, f"model_iter{iteration}.pt")
@@ -320,17 +340,24 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
             print(f"Checkpoint saved: {path}")
 
 if __name__ == "__main__":
-    device = "cuda"
-    print(f"Using GPU: {torch.cuda.get_device_name(0)}")
-
     RESUME_CHECKPOINT = "checkpoints/20260320_140904/model_iter5.pt"
+
+    if torch.cuda.is_available():
+        device = "cuda"
+        print(f"Using CUDA: {torch.cuda.get_device_name(0)}")
+    elif torch.backends.mps.is_available():
+        device = "mps"
+        print("Using MPS (Apple Silicon)")
+    else:
+        device = "cpu"
+        print("[WARNING]: Using CPU")
     
     model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
     if RESUME_CHECKPOINT and os.path.exists(RESUME_CHECKPOINT):
         model.load_state_dict(torch.load(RESUME_CHECKPOINT, map_location=device))
         print(f"Resumed from {RESUME_CHECKPOINT}")
 
-    # model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
-
+    # TODO: Add Optimizer State Checkpointing
+    # TODO: Should we switch to AdamW?
     optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
     training_loop(model, optimizer, CONFIG, device)
