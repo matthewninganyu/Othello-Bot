@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 # ── Config ────────────────────────────────────────────────────────────────────
 # Pass a path as an argument, or set DEFAULT_LOG below.
-DEFAULT_LOG = ""   # e.g. "checkpoints/20260319_000252/loss_log.csv"
+DEFAULT_LOG = "checkpoints/20260320_144204/loss_log.csv"   # e.g. "checkpoints/20260319_000252/loss_log.csv"
 SMOOTH_WINDOW = 10
 
 # ── Load ──────────────────────────────────────────────────────────────────────

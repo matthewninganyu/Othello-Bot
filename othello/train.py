@@ -37,8 +37,8 @@ CONFIG = {
  
     # Self-play
     "n_iterations":         1000,
-    "n_self_play_games":    200,       # 25 → 50: more diverse positions per iter
-    "num_searches":         400,     
+    "n_self_play_games":    100,       # 25 → 50: more diverse positions per iter
+    "num_searches":         150,     
     "temperature":          1.0,
     "temperature_drop":     20,
  
@@ -46,14 +46,14 @@ CONFIG = {
     "buffer_max_games":     2000,
  
     # Training
-    "n_epochs":             6,        # 4 → 6: more updates per batch of data
+    "n_epochs":             100,
     "batch_size":           256,      # 128 → 256: better GPU utilisation
     "lr":                   1e-3,
     "weight_decay":         1e-4,
  
     # Evaluation
-    "n_eval_games":         10,       # 15 → 10: evaluation was eating self-play budget
-    "win_rate_threshold":   0.52,     # 0.55 → 0.52: paired with fewer eval games
+    "n_eval_games":         25,    
+    "win_rate_threshold":   0.52,    
  
     # MCTS
     "dirichlet_alpha":      0.3,
@@ -62,7 +62,7 @@ CONFIG = {
  
     # Checkpointing
     "checkpoint_dir":       "checkpoints",
-    "checkpoint_every":     10,
+    "checkpoint_every":     5,
 }
 
 ################################# HELPERS #################################
@@ -274,6 +274,16 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
     best_model.load_state_dict(model.state_dict())
 
     for iteration in range(1, args["n_iterations"] + 1):
+        if iteration <= 25:
+            args["num_searches"]      = 150
+            args["n_self_play_games"] = 100
+        elif iteration <= 150:
+            args["num_searches"]      = 250
+            args["n_self_play_games"] = 150
+        else:
+            args["num_searches"]      = 400
+            args["n_self_play_games"] = 200
+
         #Self play phase
         print(f"\n=== Iteration {iteration}/{args['n_iterations']} ===")
         print("Self-play phase:")
@@ -287,8 +297,8 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
         log_writer.writerow([iteration, f"{p_loss:.6f}", f"{v_loss:.6f}", f"{p_loss+v_loss:.6f}"])
         log_file.flush()
 
-        #Evaluate phase: compare the two models (skip first 25 iterations)
-        if iteration > 0:
+        #Evaluate phase: compare the two models (skip first specified iterations)
+        if iteration > 20:
             print("Evaluation phase:")
             win_rate = evaluate_models(model, best_model, args, device)
             print(f"Win rate: {win_rate:.2%} (threshold: {args['win_rate_threshold']:.2%})")
@@ -311,15 +321,16 @@ def training_loop(model: ResNet, optimizer: torch.optim.Optimizer, args, device)
 
 if __name__ == "__main__":
     device = "cuda"
+    print(f"Using GPU: {torch.cuda.get_device_name(0)}")
 
-    # RESUME_CHECKPOINT = "checkpoints/20260319_193347/model_iter25.pt"
+    RESUME_CHECKPOINT = "checkpoints/20260320_140904/model_iter5.pt"
     
-    # model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
-    # if RESUME_CHECKPOINT and os.path.exists(RESUME_CHECKPOINT):
-    #     model.load_state_dict(torch.load(RESUME_CHECKPOINT, map_location=device))
-    #     print(f"Resumed from {RESUME_CHECKPOINT}")
-
     model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
+    if RESUME_CHECKPOINT and os.path.exists(RESUME_CHECKPOINT):
+        model.load_state_dict(torch.load(RESUME_CHECKPOINT, map_location=device))
+        print(f"Resumed from {RESUME_CHECKPOINT}")
+
+    # model = ResNet(CONFIG["n_res_blocks"], CONFIG["filters"]).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=CONFIG["lr"], weight_decay=CONFIG["weight_decay"])
     training_loop(model, optimizer, CONFIG, device)

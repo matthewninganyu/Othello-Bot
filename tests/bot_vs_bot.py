@@ -8,11 +8,11 @@ from othello.BetaFish import MCTS
 # ── Config ────────────────────────────────────────────────────────────────────
 
 #Select the two checkpoints to compare. Set to None to use untrained model.
-CHECKPOINT_A = "checkpoints/20260319_213435/model_iter100.pt"
-CHECKPOINT_B = "checkpoints/20260319_213435/model_iter20.pt"
+CHECKPOINT_A = "checkpoints/20260320_144204/model_iter45.pt"
+CHECKPOINT_B = "checkpoints/20260320_144204/model_iter55.pt"
 
 N_GAMES       = 100    # total games (split evenly between A-as-black and A-as-white)
-NUM_SEARCHES  = 200
+NUM_SEARCHES  = 150
 OPENING_PLY   = 4     # random opening moves before MCTS takes over (diversity)
 
 ARGS = {
